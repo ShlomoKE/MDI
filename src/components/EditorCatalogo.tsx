@@ -7,7 +7,7 @@
  * medida se comparte con el mismo enlace.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Boton, Numero, Texto } from "./Campos";
 import { GPUS, MODELOS, gpuNueva, modeloNuevo, type GPUCatalogo, type ModeloCatalogo } from "../lib/catalogos";
@@ -117,7 +117,10 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
             </div>
           </div>
 
-          <div className="overflow-x-auto -mx-3 px-3">
+          {/* Escritorio: rejilla en tabla. En móvil un scroller horizontal
+              anidado deja los controles fuera de pantalla, así que abajo hay un
+              camino de tarjetas con los mismos campos. */}
+          <div className="hidden md:block overflow-x-auto -mx-3 px-3">
             {pestana === "gpus" ? (
               <table className="w-full text-sm" style={{ minWidth: 620 }}>
                 <thead>
@@ -244,6 +247,88 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
             )}
           </div>
 
+          {/* Móvil: una tarjeta por entrada, con los mismos campos apilados. */}
+          <div className="md:hidden flex flex-col gap-3">
+            {pestana === "gpus"
+              ? gpus.map((g) => (
+                  <article key={g.id} className="rounded border border-linea p-3">
+                    <div className="flex items-start gap-2 mb-2">
+                      <Texto
+                        valor={g.nombre}
+                        set={(v) => editarGpu(g.id, { nombre: v })}
+                        etiqueta="Nombre de la GPU"
+                      />
+                      <BotonIcono
+                        etiqueta={`Eliminar ${g.nombre}`}
+                        onClick={() => onGpus(gpus.filter((x) => x.id !== g.id))}
+                        peligro
+                      >
+                        ×
+                      </BotonIcono>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                      <CampoTarjeta etiqueta="VRAM (GB)">
+                        <Numero valor={g.vram_gb} set={(v) => editarGpu(g.id, { vram_gb: v })} etiqueta={`VRAM de ${g.nombre}`} paso={8} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="Ancho de banda (GB/s)">
+                        <Numero valor={g.bw_gbs} set={(v) => editarGpu(g.id, { bw_gbs: v })} etiqueta={`Ancho de banda de ${g.nombre}`} paso={100} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="TFLOPS">
+                        <Numero valor={g.tflops} set={(v) => editarGpu(g.id, { tflops: v })} etiqueta={`TFLOPS de ${g.nombre}`} paso={50} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="Precio (USD/h)">
+                        <Numero valor={g.precio_hora} set={(v) => editarGpu(g.id, { precio_hora: v })} etiqueta={`Precio de ${g.nombre}`} paso={0.1} />
+                      </CampoTarjeta>
+                    </div>
+                  </article>
+                ))
+              : modelos.map((m) => (
+                  <article key={m.id} className="rounded border border-linea p-3">
+                    <div className="flex items-start gap-2 mb-2">
+                      <Texto
+                        valor={m.nombre}
+                        set={(v) => editarModelo(m.id, { nombre: v })}
+                        etiqueta="Nombre del modelo"
+                      />
+                      <BotonIcono etiqueta={`Duplicar ${m.nombre}`} onClick={() => duplicarModelo(m)}>
+                        ⧉
+                      </BotonIcono>
+                      <BotonIcono
+                        etiqueta={`Eliminar ${m.nombre}`}
+                        onClick={() => eliminarModelo(m.id)}
+                        desactivado={modelos.length <= 1}
+                        peligro
+                      >
+                        ×
+                      </BotonIcono>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                      <CampoTarjeta etiqueta="N (miles de millones)">
+                        <Numero valor={m.N} set={(v) => editarModelo(m.id, { N: v })} etiqueta={`Parámetros de ${m.nombre}`} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="Lₐ capas de atención">
+                        <Numero valor={m.capas_atn} set={(v) => editarModelo(m.id, { capas_atn: v })} etiqueta={`Capas de atención de ${m.nombre}`} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="H cabezas KV">
+                        <Numero valor={m.kv_heads} set={(v) => editarModelo(m.id, { kv_heads: v })} etiqueta={`Cabezas KV de ${m.nombre}`} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="dₖ dimensión">
+                        <Numero valor={m.head_dim} set={(v) => editarModelo(m.id, { head_dim: v })} etiqueta={`Dimensión por cabeza de ${m.nombre}`} paso={32} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="Pesos">
+                        <SelectQuant valor={m.quant_pesos} set={(v) => editarModelo(m.id, { quant_pesos: v })} etiqueta={`Cuantización de pesos de ${m.nombre}`} />
+                      </CampoTarjeta>
+                      <CampoTarjeta etiqueta="Caché">
+                        <SelectQuant valor={m.quant_cache} set={(v) => editarModelo(m.id, { quant_cache: v })} etiqueta={`Cuantización de caché de ${m.nombre}`} />
+                      </CampoTarjeta>
+                    </div>
+                    <p className="text-xs text-suave mono mt-2">
+                      {enGB(Pm(m))} GB · {enKB(KVt(m))} KB/tok
+                    </p>
+                  </article>
+                ))}
+          </div>
+
           <p className="text-xs text-suave mt-3 leading-relaxed">
             {pestana === "gpus"
               ? "Los precios son referenciales: CAPEX amortizado más OPEX, no una cotización. El factor de eficiencia se aplica por igual a todo el catálogo desde el panel de parámetros."
@@ -252,6 +337,46 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
         </div>
       )}
     </div>
+  );
+}
+
+function CampoTarjeta({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+  return (
+    <label className="min-w-0">
+      <span className="text-xs text-suave block mb-0.5 leading-tight">{etiqueta}</span>
+      {children}
+    </label>
+  );
+}
+
+/** Botón de icono con 44x44 de área tocable. */
+function BotonIcono({
+  children,
+  etiqueta,
+  onClick,
+  peligro = false,
+  desactivado = false,
+}: {
+  children: ReactNode;
+  etiqueta: string;
+  onClick: () => void;
+  peligro?: boolean;
+  desactivado?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={etiqueta}
+      title={etiqueta}
+      disabled={desactivado}
+      className={
+        "shrink-0 grid place-items-center w-11 h-11 -my-1.5 rounded text-lg leading-none transition-colors disabled:opacity-30 text-suave " +
+        (peligro ? "hover:text-lat" : "hover:text-tinta")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

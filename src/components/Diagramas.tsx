@@ -110,7 +110,7 @@ export function DiagramaCiclo() {
       {/* camino de cómputo */}
       <rect x={x0} y={y0 + 62} width={310} height={h} fill={COLOR.computo} rx="3" />
       <Etiqueta x={x0 + 155} y={y0 + 84} ancla="middle" color={COLOR.superficie} tam={11.5}>
-        multiplicar · 2·N·B / F
+        multiplicar · 2·N·10⁹·B / F
       </Etiqueta>
       <Etiqueta x={x0} y={y0 + 54} color={COLOR.computo} peso={600} tam={11}>
         camino de cómputo
@@ -213,7 +213,7 @@ export function DiagramaTechos() {
         cómputo
       </Etiqueta>
       <Etiqueta x={20} y={198} tam={10} color={COLOR.suave}>
-        SLO·F / 2N
+        SLO·F / 2N·10⁹
       </Etiqueta>
       {barra(170, [
         { frac: 0.55, color: COLOR.computo, texto: "secuencias en el lote" },
@@ -237,14 +237,15 @@ export function DiagramaRegimenes() {
   const x1 = 600;
   const y = 96;
   const h = 42;
-  const c1 = x0 + (x1 - x0) * 0.3;
-  const c2 = x0 + (x1 - x0) * 0.64;
+  // Un solo corte, no dos: el salto ocurre en min(Ceq₁, Ceq₃) y ahí termina el
+  // régimen de cómputo.
+  const corte = x0 + (x1 - x0) * 0.42;
 
   return (
     <Marco
-      alto={200}
+      alto={212}
       titulo="El cuello de botella se mueve con el contexto"
-      pie="Con contextos cortos el caché es despreciable y manda el cómputo: la GPU multiplica todo el día. Al alargar el contexto el caché empieza a dominar el tráfico y el cuello pasa a latencia y luego a memoria. Los cruces Ceq₁ y Ceq₃ son los contextos donde ocurre el cambio, y la calculadora los reporta para el hardware que elijas."
+      pie="Con contextos cortos el caché es despreciable y manda el cómputo: la GPU multiplica todo el día. Al alargar el contexto el caché domina el tráfico y el cuello pasa al techo de bytes más estrecho. Cuál de los dos es —memoria o latencia— no depende del contexto sino del hardware frente al SLO, así que los regímenes son dos, no tres: el salto ocurre en el menor de los dos cruces y el otro queda por detrás sin cambiar nada."
     >
       <Etiqueta x={x0} y={40} tam={12} peso={600} color={COLOR.tinta}>
         ¿Qué restricción manda?
@@ -253,38 +254,31 @@ export function DiagramaRegimenes() {
         contexto promedio por sesión, escala logarítmica
       </Etiqueta>
 
-      <rect x={x0} y={y} width={c1 - x0} height={h} fill={COLOR.computoTenue} rx="2" />
-      <rect x={c1} y={y} width={c2 - c1} height={h} fill={COLOR.latenciaTenue} />
-      <rect x={c2} y={y} width={x1 - c2} height={h} fill={COLOR.memoriaTenue} rx="2" />
+      <rect x={x0} y={y} width={corte - x0} height={h} fill={COLOR.computoTenue} rx="2" />
+      {/* La segunda mitad se pinta a dos aguas porque cuál de los dos techos de
+          bytes manda es una propiedad de la GPU, no del contexto. */}
+      <defs>
+        <linearGradient id="mdi-bytes" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor={COLOR.latenciaTenue} />
+          <stop offset="100%" stopColor={COLOR.memoriaTenue} />
+        </linearGradient>
+      </defs>
+      <rect x={corte} y={y} width={x1 - corte} height={h} fill="url(#mdi-bytes)" rx="2" />
 
-      <Etiqueta x={(x0 + c1) / 2} y={y + 26} ancla="middle" color={COLOR.computo} peso={600} tam={12}>
+      <Etiqueta x={(x0 + corte) / 2} y={y + 26} ancla="middle" color={COLOR.computo} peso={600} tam={12}>
         cómputo
       </Etiqueta>
-      <Etiqueta x={(c1 + c2) / 2} y={y + 26} ancla="middle" color={COLOR.latencia} peso={600} tam={12}>
-        latencia
+      <Etiqueta x={(corte + x1) / 2} y={y + 21} ancla="middle" color={COLOR.latencia} peso={600} tam={12}>
+        latencia o memoria
       </Etiqueta>
-      <Etiqueta x={(c2 + x1) / 2} y={y + 26} ancla="middle" color={COLOR.memoria} peso={600} tam={12}>
-        memoria
+      <Etiqueta x={(corte + x1) / 2} y={y + 35} ancla="middle" color={COLOR.suave} tam={10}>
+        el techo de bytes más estrecho
       </Etiqueta>
 
-      {[
-        [c1, "Ceq₁", COLOR.latencia],
-        [c2, "Ceq₃", COLOR.memoria],
-      ].map(([x, t, col]) => (
-        <g key={t as string}>
-          <line
-            x1={x as number}
-            x2={x as number}
-            y1={y - 12}
-            y2={y + h + 12}
-            stroke={col as string}
-            strokeWidth="1.5"
-          />
-          <Etiqueta x={x as number} y={y - 18} ancla="middle" color={col as string} peso={600} tam={11} mono>
-            {t as string}
-          </Etiqueta>
-        </g>
-      ))}
+      <line x1={corte} x2={corte} y1={y - 12} y2={y + h + 12} stroke={COLOR.tinta} strokeWidth="1.5" />
+      <Etiqueta x={corte} y={y - 18} ancla="middle" color={COLOR.tinta} peso={600} tam={11} mono>
+        min(Ceq₁, Ceq₃)
+      </Etiqueta>
 
       <line x1={x0} x2={x1} y1={y + h + 22} y2={y + h + 22} stroke={COLOR.linea} strokeWidth="1" />
       <Etiqueta x={x0} y={y + h + 38} tam={10} color={COLOR.suave} mono>

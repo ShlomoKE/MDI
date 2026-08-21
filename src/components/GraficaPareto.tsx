@@ -8,7 +8,7 @@
  */
 
 import { COLOR, colorCuello, fmt, usd } from "../lib/formato";
-import type { Fila } from "../lib/resultados";
+import { dibujable, type Fila } from "../lib/resultados";
 
 interface Props {
   filas: Fila[];
@@ -30,7 +30,7 @@ const PH = H - MT - MB;
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
-  const ok = filas.filter((f) => f.dim.viable);
+  const ok = filas.filter(dibujable);
 
   const maxX = Math.max(slo_ms * 1.25, ...ok.map((f) => f.dim.tpot_ms), 10);
   const maxY = Math.max(...ok.map((f) => f.dim.costo_hora), 1) * 1.15;
@@ -156,12 +156,11 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            role="listitem"
             aria-label={`${f.gpu.nombre}: ${f.dim.G} GPUs, ${fmt(f.dim.tpot_ms, 1)} ms, ${usd(f.dim.costo_hora)} por hora`}
             style={{ cursor: "pointer" }}
           >
             {/* área de contacto generosa para el dedo en pantallas táctiles */}
-            <circle cx={x} cy={y} r={16} fill="transparent" />
+            <circle cx={x} cy={y} r={26} fill="transparent" />
             <circle cx={x} cy={y} r={hv ? 8 : 5.5} fill={col} opacity={hv ? 1 : 0.88} />
             <text
               x={x}

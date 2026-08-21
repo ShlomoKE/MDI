@@ -7,6 +7,7 @@ import {
   Pm,
   QUANT,
   W,
+  formatoG,
   activasTotal,
   bytesCache,
   capacidad,
@@ -470,6 +471,30 @@ describe("unidades y guardas", () => {
     expect(kappa(c)).toBe(Infinity);
     const cap = capacidad(MODELOS[0], GPUS[0], c, 4);
     expect(cap.usuarios).toBe(Infinity);
+  });
+
+  it("formatoG reproduce %g de Python, incluidas las fronteras", () => {
+    // Valores contrastados ejecutando f"{x:g}" en CPython 3.13.
+    const casos: Array<[number, string]> = [
+      [30, "30"],
+      [30.5, "30.5"],
+      [0.5, "0.5"],
+      [1, "1"],
+      [0.001, "0.001"],
+      [0.0001, "0.0001"],
+      // Redondea a 0.0001 y por tanto NO entra en notación exponencial, aunque
+      // su log10 esté por debajo de -4.
+      [9.9999999e-5, "0.0001"],
+      // Al revés: log10 < 6 pero redondea a 1000000, así que sí sale como 1e+06.
+      [999999.5, "1e+06"],
+      [1e7, "1e+07"],
+      [123456.7, "123457"],
+      [0, "0"],
+      [-0, "-0"],
+    ];
+    for (const [x, esperado] of casos) {
+      expect(formatoG(x), String(x)).toBe(esperado);
+    }
   });
 
   it("el mensaje del SLO usa el mismo formato que Python", () => {

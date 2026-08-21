@@ -6,6 +6,8 @@
 
 import { useId, type ReactNode } from "react";
 
+import EntradaNumerica from "./EntradaNumerica";
+
 export function Campo({
   label,
   valor,
@@ -32,18 +34,13 @@ export function Campo({
         {label}
       </label>
       <span className="flex items-baseline gap-1 shrink-0">
-        <input
+        <EntradaNumerica
           id={id}
-          type="number"
-          value={valor}
+          valor={valor}
+          set={set}
           min={min}
           max={max}
-          step={paso}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            const n = Number.isFinite(v) ? v : min;
-            set(Math.min(max ?? Infinity, Math.max(min, n)));
-          }}
+          paso={paso}
           className="campo mono w-24 px-2 py-1 text-right text-sm"
         />
         <span className="text-xs w-10 text-suave">{sufijo ?? ""}</span>
@@ -79,12 +76,10 @@ export function Seccion({ titulo, children }: { titulo: string; children: ReactN
 export function Kpi({ k, v, col }: { k: string; v: ReactNode; col?: string }) {
   return (
     <div className="px-3 py-2 rounded border border-linea bg-superficie min-w-0">
-      <div className="text-xs text-suave truncate" title={k}>
-        {k}
-      </div>
-      <div className={"mono text-lg truncate " + (col ?? "")} title={typeof v === "string" ? v : undefined}>
-        {v}
-      </div>
+      <div className="text-xs text-suave leading-tight">{k}</div>
+      {/* `break-words` en vez de `truncate`: en móvil una etiqueta de dos
+          palabras cabe partida, pero recortada no se entiende. */}
+      <div className={"mono text-lg leading-tight break-words " + (col ?? "")}>{v}</div>
     </div>
   );
 }
@@ -156,16 +151,12 @@ export function Numero({
   ancho?: string;
 }) {
   return (
-    <input
-      type="number"
-      value={valor}
-      step={paso}
+    <EntradaNumerica
+      valor={valor}
+      set={set}
+      paso={paso}
       min={min}
-      aria-label={etiqueta}
-      onChange={(e) => {
-        const v = parseFloat(e.target.value);
-        set(Math.max(min, Number.isFinite(v) ? v : min));
-      }}
+      etiqueta={etiqueta}
       className={"campo mono px-1.5 py-1 text-right text-sm " + ancho}
     />
   );

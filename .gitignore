@@ -17,3 +17,7 @@ __pycache__/
 
 # el encargo original, no forma parte del sitio
 prompt.txt
+
+# borradores: informes de Lighthouse, scripts de medición, pruebas de un solo uso
+/_*
+src/_*.test.*

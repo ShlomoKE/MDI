@@ -51,15 +51,22 @@ export const CLASE_CUELLO: Record<Cuello, { texto: string; fondo: string; borde:
   computo: { texto: "text-comp", fondo: "bg-comp-tenue", borde: "border-comp" },
 };
 
-/** Los mismos colores, en hex, para lo que se dibuja en SVG. */
+/**
+ * Los mismos colores, en hex, para lo que se dibuja en SVG —donde las clases de
+ * Tailwind no sirven porque `fill` y `stroke` piden un valor literal—.
+ *
+ * Estos valores tienen que coincidir con los tokens de `@theme` en index.css.
+ * Como no hay forma de que el CSS y el TypeScript compartan una sola fuente,
+ * `formato.test.ts` lee index.css y falla si alguno se desincroniza.
+ */
 export const COLOR = {
   fondo: "#f1f3f2",
   superficie: "#ffffff",
   tinta: "#111815",
-  suave: "#6e7a75",
+  suave: "#5c6863",
   linea: "#d3dad7",
   memoria: "#1f5f4c",
-  latencia: "#b4451f",
+  latencia: "#ac411d",
   computo: "#4a4e8c",
   memoriaTenue: "#dce9e4",
   latenciaTenue: "#f6e2d8",

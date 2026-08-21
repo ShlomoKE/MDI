@@ -7,6 +7,7 @@
  */
 
 import BarrasPresion from "./BarrasPresion";
+import EntradaNumerica from "./EntradaNumerica";
 import type { GPUCatalogo } from "../lib/catalogos";
 import type { Fila } from "../lib/resultados";
 import type { Modo } from "../lib/urlEstado";
@@ -70,13 +71,12 @@ function PrecioInput({
   id: string;
 }) {
   return (
-    <input
-      type="number"
-      value={valor}
-      step={0.1}
+    <EntradaNumerica
+      valor={valor}
+      set={onChange}
+      paso={0.1}
       min={0}
-      aria-label={`Precio por hora de ${id}`}
-      onChange={(e) => onChange(Math.max(0, parseFloat(e.target.value) || 0))}
+      etiqueta={`Precio por hora de ${id}`}
       className="campo mono w-20 px-1.5 py-0.5 text-right text-sm"
     />
   );
@@ -89,7 +89,9 @@ function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => voi
       onClick={onClick}
       title={`Eliminar ${nombre} del catálogo`}
       aria-label={`Eliminar ${nombre} del catálogo`}
-      className="text-suave hover:text-lat text-base leading-none px-1 rounded transition-colors"
+      /* 44x44 css px de área tocable: es un botón destructivo y en móvil vive
+         al lado de la casilla de incluir. */
+      className="text-suave hover:text-lat text-lg leading-none rounded transition-colors grid place-items-center w-11 h-11 -my-2"
     >
       ×
     </button>
@@ -135,7 +137,8 @@ export function TablaGPUs(p: Props) {
                   key={f.gpu.id}
                   className={
                     "border-t border-linea transition-colors " +
-                    (foco === f.gpu.id ? "bg-fondo" : "")
+                    (foco === f.gpu.id ? "bg-fondo " : "") +
+                    (f.gpu.on ? "" : "opacity-45")
                   }
                   onMouseEnter={() => setFoco(f.gpu.id)}
                   onMouseLeave={() => setFoco(null)}
@@ -263,7 +266,8 @@ export function TablaGPUs(p: Props) {
               key={f.gpu.id}
               className={
                 "rounded border bg-superficie p-3 " +
-                (esMejor ? "border-mem" : "border-linea")
+                (esMejor ? "border-mem " : "border-linea ") +
+                (f.gpu.on ? "" : "opacity-45")
               }
             >
               <header className="flex items-start justify-between gap-2 mb-2">
@@ -308,62 +312,70 @@ export function TablaGPUs(p: Props) {
                   </dd>
                 </div>
 
-                {!f.techos.viable ? (
-                  <p className="col-span-2 text-xs text-lat mt-1">{f.techos.motivo}</p>
-                ) : dim ? (
-                  <>
-                    <Dato k="GPUs" v={String(f.dim.G)} destacado />
-                    <Dato
-                      k="TPOT"
-                      v={`${fmt(f.dim.tpot_ms, 1)} ms`}
-                      clase={cumple ? "" : "text-lat"}
-                    />
-                    <Dato k="tok/s sesión" v={fmt(f.dim.tok_s_sesion, 1)} />
-                    <Dato
-                      k="Costo/h"
-                      v={usd(f.dim.costo_hora)}
-                      clase={clase ? clase.texto : ""}
-                      destacado
-                    />
-                    <div className="col-span-2 mt-2 pt-2 border-t border-linea">
-                      <div className="text-xs text-suave mb-1">
-                        Presión por restricción · manda{" "}
-                        <span className={clase ? clase.texto : ""}>
-                          {nombreCuello(f.dim.cuello)}
-                        </span>
-                      </div>
-                      <BarrasPresion
-                        G_mem={f.dim.G_mem}
-                        G_lat={f.dim.G_lat}
-                        G_comp={f.dim.G_comp}
-                        cuello={f.dim.cuello}
-                        ancho="100%"
+                {/* Un <dl> solo admite grupos dt/dd, así que el motivo y las
+                    barras de presión van fuera de la lista, más abajo. */}
+                {f.techos.viable &&
+                  (dim ? (
+                    <>
+                      <Dato k="GPUs" v={String(f.dim.G)} destacado />
+                      <Dato
+                        k="TPOT"
+                        v={`${fmt(f.dim.tpot_ms, 1)} ms`}
+                        clase={cumple ? "" : "text-lat"}
                       />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Dato
-                      k={`Usuarios con ${G} GPUs`}
-                      v={f.cap.alcanza ? fmt(f.cap.usuarios) : "no alcanza"}
-                      clase={f.cap.alcanza ? "text-mem" : "text-lat"}
-                      destacado
-                    />
-                    <Dato k="Solo agentes" v={fmtCorto(f.soloAgentes)} />
-                    <Dato
-                      k="Cuello"
-                      v={f.cap.alcanza ? nombreCuello(cuello) : "—"}
-                      clase={clase ? clase.texto : ""}
-                    />
-                    <Dato
-                      k="TPOT"
-                      v={f.cap.alcanza ? `${fmt(f.cap.tpot_ms, 1)} ms` : "—"}
-                      clase={cumple ? "" : "text-lat"}
-                    />
-                    <Dato k="Costo/h" v={usd(f.cap.costo_hora)} destacado />
-                  </>
-                )}
+                      <Dato k="tok/s sesión" v={fmt(f.dim.tok_s_sesion, 1)} />
+                      <Dato
+                        k="Costo/h"
+                        v={usd(f.dim.costo_hora)}
+                        clase={clase ? clase.texto : ""}
+                        destacado
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Dato
+                        k={`Usuarios con ${G} GPUs`}
+                        v={f.cap.alcanza ? fmt(f.cap.usuarios) : "no alcanza"}
+                        clase={f.cap.alcanza ? "text-mem" : "text-lat"}
+                        destacado
+                      />
+                      <Dato k="Solo agentes" v={fmtCorto(f.soloAgentes)} />
+                      <Dato
+                        k="Cuello"
+                        v={f.cap.alcanza ? nombreCuello(cuello) : "—"}
+                        clase={clase ? clase.texto : ""}
+                      />
+                      <Dato
+                        k="TPOT"
+                        v={f.cap.alcanza ? `${fmt(f.cap.tpot_ms, 1)} ms` : "—"}
+                        clase={cumple ? "" : "text-lat"}
+                      />
+                      <Dato k="Costo/h" v={usd(f.cap.costo_hora)} destacado />
+                    </>
+                  ))}
               </dl>
+
+              {!f.techos.viable && (
+                <p className="text-xs text-lat mt-2">{f.techos.motivo}</p>
+              )}
+
+              {f.techos.viable && dim && (
+                <div className="mt-3 pt-2 border-t border-linea">
+                  <div className="text-xs text-suave mb-1">
+                    Presión por restricción · manda{" "}
+                    <span className={clase ? clase.texto : ""}>
+                      {nombreCuello(f.dim.cuello)}
+                    </span>
+                  </div>
+                  <BarrasPresion
+                    G_mem={f.dim.G_mem}
+                    G_lat={f.dim.G_lat}
+                    G_comp={f.dim.G_comp}
+                    cuello={f.dim.cuello}
+                    ancho="100%"
+                  />
+                </div>
+              )}
             </article>
           );
         })}
@@ -383,16 +395,13 @@ function Dato({
   clase?: string;
   destacado?: boolean;
 }) {
+  // Etiqueta arriba y valor debajo. En una rejilla de dos columnas a 360 px la
+  // celda mide unos 145 px: puestos en fila, el valor con `whitespace-nowrap` se
+  // llevaba todo el ancho y la etiqueta quedaba recortada a tres caracteres.
   return (
-    <div className="flex items-baseline justify-between gap-2 min-w-0">
-      <dt className="text-xs text-suave truncate">{k}</dt>
-      <dd
-        className={
-          "mono text-right whitespace-nowrap " +
-          (destacado ? "font-medium " : "") +
-          clase
-        }
-      >
+    <div className="min-w-0">
+      <dt className="text-xs text-suave leading-tight">{k}</dt>
+      <dd className={"mono leading-tight " + (destacado ? "font-medium " : "") + clase}>
         {v}
       </dd>
     </div>

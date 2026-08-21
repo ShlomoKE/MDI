@@ -168,12 +168,17 @@ export function techos(m: Modelo, g: GPU, c: Carga): Techos {
 /**
  * Equivalente de f"{x:g}" en Python, que es como motor.py formatea el SLO dentro
  * del mensaje de inviabilidad. Se replica para que los textos coincidan letra
- * por letra con la salida de referencia.
+ * por letra con la salida de referencia. Se exporta para poder contrastarlo
+ * directamente contra Python en las pruebas, sin pasar por `techos`.
  */
-function formatoG(x: number): string {
+export function formatoG(x: number): string {
   if (!Number.isFinite(x)) return String(x);
-  if (x === 0) return "0";
-  const exp = Math.floor(Math.log10(Math.abs(x)));
+  // Object.is distingue -0 de 0, que es justo lo que hace Python al imprimirlo.
+  if (x === 0) return Object.is(x, -0) ? "-0" : "0";
+  // El exponente se lee del valor YA redondeado a seis cifras significativas.
+  // Tomarlo con log10 antes de redondear se equivoca en la frontera: 999999.5
+  // tiene log10 < 6, pero %g lo redondea a 1000000 y lo imprime como 1e+06.
+  const exp = Number(x.toExponential(5).split("e")[1]);
   if (exp < -4 || exp >= 6) {
     const [mant, e] = x.toExponential(5).split("e");
     const signo = e[0] === "-" ? "-" : "+";

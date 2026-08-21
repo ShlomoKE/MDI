@@ -56,18 +56,13 @@ export function Calculadora() {
     return () => clearTimeout(t);
   }, [estado]);
 
-  // Si alguien llega por un enlace compartido con el historial hacia atrás.
-  useEffect(() => {
-    const alVolver = () => setEstado(leer(window.location.search));
-    window.addEventListener("popstate", alVolver);
-    return () => window.removeEventListener("popstate", alVolver);
-  }, []);
-
   const r = useMemo(() => calcular(estado), [estado]);
   const dim = estado.modo === "dimensionar";
   const modelo = r.modelo;
 
-  const activo = r.ok.find((f) => f.gpu.id === foco) ?? r.mejor;
+  // El foco puede caer en una GPU excluida de la comparación: sigue teniendo
+  // fila en la tabla y su detalle es igual de válido.
+  const activo = r.filas.find((f) => f.gpu.id === foco && f.techos.viable) ?? r.mejor;
   const cuelloActivo = activo
     ? dim
       ? activo.dim.cuello
@@ -105,7 +100,7 @@ export function Calculadora() {
   const exportar = () => descargarCSV(nombreConFecha(dim ? "dimensionar" : "capacidad"), filasCSV(estado, r, dim));
 
   return (
-    <div className="bg-fondo text-tinta" id="calculadora">
+    <div className="bg-fondo text-tinta">
       {/* ------------------------------ Encabezado ------------------------------ */}
       <div className="px-4 sm:px-6 py-5 border-y border-linea bg-superficie">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -448,13 +443,13 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
   if (dim) {
     return [
       [
-        "gpu", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
+        "gpu", "incluida", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
         "viable", "motivo", "G", "cuello", "G_memoria", "G_latencia", "G_computo",
         "B_por_gpu", "tpot_ms", "tok_s_sesion", "throughput_tok_s", "costo_hora", "cumple_slo",
         ...colsEscenario,
       ],
       ...r.filas.map((f): Celda[] => [
-        f.gpu.nombre, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
+        f.gpu.nombre, f.gpu.on, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
         f.dim.viable, f.dim.motivo, f.dim.viable ? f.dim.G : null, f.dim.cuello,
         f.dim.viable ? f.dim.G_mem : null, f.dim.viable ? f.dim.G_lat : null, f.dim.viable ? f.dim.G_comp : null,
         f.dim.viable ? f.dim.B : null, f.dim.viable ? f.dim.tpot_ms : null,
@@ -467,13 +462,13 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
 
   return [
     [
-      "gpu", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
+      "gpu", "incluida", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
       "viable", "motivo", "G", "alcanza", "usuarios", "agentes_fijados", "solo_agentes",
       "solo_usuarios", "cuello", "B_por_gpu", "tpot_ms", "throughput_tok_s", "costo_hora",
       ...colsEscenario,
     ],
     ...r.filas.map((f): Celda[] => [
-      f.gpu.nombre, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
+      f.gpu.nombre, f.gpu.on, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
       f.cap.viable, f.cap.motivo, f.cap.viable ? f.cap.G : null, f.cap.viable ? f.cap.alcanza : null,
       f.cap.alcanza ? f.cap.usuarios : null, f.cap.agentes,
       f.techos.viable ? f.soloAgentes : null, f.techos.viable ? f.soloUsuarios : null,

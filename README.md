@@ -66,10 +66,48 @@ src/
 ```
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 284 pruebas
+npm test           # 303 pruebas
 npm run build      # sale a dist/
 npm run preview    # sirve dist/ localmente
 ```
+
+Las pruebas se reparten en tres archivos: `motor.test.ts` (paridad con Python e
+invariantes del modelo), `formato.test.ts` (la paleta de SVG atada a los tokens
+de CSS y el contraste WCAG AA) y `App.test.tsx` (monta la página entera en jsdom
+y falla si algo escribe en la consola).
+
+Dos verificaciones más viven en `scripts/` y no corren en `npm test` porque
+necesitan un Chrome de verdad y el sitio ya construido:
+
+```
+npm run build
+npx vite preview --port 4173 --strictPort     # en otra terminal
+
+npm i -D --no-save chrome-launcher puppeteer-core
+node scripts/e2e.mjs                          # 13 comprobaciones en Chrome
+
+npm i -D --no-save lighthouse chrome-launcher
+node scripts/lighthouse.mjs http://localhost:4173/ mobile
+node scripts/lighthouse.mjs http://localhost:4173/ desktop
+```
+
+Esas dependencias están deliberadamente fuera de `package.json`: arrastran el
+árbol entero de puppeteer y con él una veintena de avisos de seguridad que no
+tienen por qué vivir en un sitio estático.
+
+**Últimas mediciones** (Lighthouse, build de producción servido en local):
+
+| | Rendimiento | Accesibilidad | Buenas prácticas | SEO |
+| --- | --- | --- | --- | --- |
+| Móvil | 91–96 | 100 | 100 | 100 |
+| Escritorio | 99 | 100 | 100 | 100 |
+
+Tres cosas sostienen ese rendimiento y conviene no deshacerlas sin medir:
+`content-visibility` sobre los bloques del documento (son 14 000 px de alto y
+más de tres mil elementos de KaTeX), el plugin `plugins/rehype-katex-compacto.mjs`
+—que colapsa cada ecuación en un solo nodo con `dangerouslySetInnerHTML` en vez
+de dejar que React construya cien elementos por fórmula— y el montaje diferido
+de la calculadora en `SeccionCalculadora.tsx`.
 
 Stack: Vite + React + TypeScript + Tailwind CSS. Las gráficas son SVG dibujado a
 mano —ninguna librería de charts—. Las ecuaciones del documento las resuelve
@@ -89,7 +127,7 @@ cada push a `main` dispara un despliegue automático.
 | Framework preset | Vite |
 | Build command | `npm run build` |
 | Build output directory | `dist` |
-| Node version | 22 (variable de entorno `NODE_VERSION`) |
+| Node version | 22 — ya fijada por `.node-version` y por `engines` en package.json |
 
 Los pasos, una sola vez:
 
@@ -97,6 +135,14 @@ Los pasos, una sola vez:
    **Connect to Git**.
 2. Autoriza la cuenta de GitHub y elige este repositorio.
 3. Rellena la tabla de arriba y despliega.
+
+> **Si el repositorio no aparece en la lista de Cloudflare**, casi siempre es una
+> de dos cosas. La primera: la app de GitHub de *Cloudflare Pages* se instala con
+> acceso a *repositorios seleccionados*, y un repo privado recién creado no entra
+> solo — se arregla en <https://github.com/settings/installations> → *Cloudflare
+> Pages* → *Repository access* → **All repositories**, o añadiendo este repo a la
+> lista. La segunda: tener varias cuentas de GitHub y estar mirando la que no es;
+> el desplegable de cuenta en Cloudflare tiene que ser la dueña del repositorio.
 
 Desde ahí, cada push a `main` publica solo; las ramas y los pull requests
 generan despliegues de vista previa con su propia URL.

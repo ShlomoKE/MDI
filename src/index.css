@@ -20,11 +20,15 @@
   --color-fondo: #f1f3f2;
   --color-superficie: #ffffff;
   --color-tinta: #111815;
-  --color-suave: #6e7a75;
+  /* Gris de apoyo. Más oscuro que el del prototipo: aquel daba 4.46:1 sobre
+     blanco y se quedaba justo por debajo del 4.5:1 que pide WCAG AA. */
+  --color-suave: #5c6863;
   --color-linea: #d3dad7;
 
   --color-mem: #1f5f4c;
-  --color-lat: #b4451f;
+  /* Naranja quemado, un punto más oscuro que el del prototipo por la misma
+     razón: sobre su propio fondo tenue no llegaba a 4.5:1. */
+  --color-lat: #ac411d;
   --color-comp: #4a4e8c;
 
   --color-mem-tenue: #dce9e4;
@@ -104,6 +108,50 @@
 
 .documento {
   max-width: 46rem;
+}
+
+/* El documento mide unos 14 000 px de alto y las ecuaciones de KaTeX aportan
+   más de tres mil elementos. Sin esto el navegador recalcula estilo y layout de
+   todo el artículo cada vez que llega una fuente, y son diez fuentes: seis
+   segundos de trabajo en el hilo principal. `content-visibility` le deja saltar
+   lo que está fuera de la pantalla.
+
+   `contain-intrinsic-size: auto <x>` guarda el tamaño real una vez que el
+   bloque se pintó; el valor de reserva solo se usa la primera vez, y está
+   calibrado por tipo de elemento para que la barra de scroll no salte. */
+.documento > *,
+.calculadora-diferida {
+  content-visibility: auto;
+}
+
+/* La calculadora entera va al final de la página, fuera de la pantalla. Sin un
+   tamaño de reserva el contenedor mediría cero mientras está saltada y el pie
+   de página se pegaría al documento. */
+.calculadora-diferida {
+  contain-intrinsic-size: auto 1400px;
+}
+
+.documento > p {
+  contain-intrinsic-size: auto 7rem;
+}
+.documento > ul,
+.documento > ol {
+  contain-intrinsic-size: auto 11rem;
+}
+.documento > blockquote {
+  contain-intrinsic-size: auto 9rem;
+}
+.documento > figure {
+  contain-intrinsic-size: auto 20rem;
+}
+.documento > .katex-display {
+  contain-intrinsic-size: auto 4.5rem;
+}
+/* Los títulos se dejan siempre renderizados: son baratos y la navegación lee su
+   posición para saber en qué sección va el lector. */
+.documento > h2,
+.documento > h3 {
+  content-visibility: visible;
 }
 
 .documento h2 {

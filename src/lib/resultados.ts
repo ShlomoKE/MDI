@@ -69,6 +69,15 @@ export interface Resultados {
   mejor: Fila | null;
 }
 
+/**
+ * Una fila que se puede dibujar: viable y con números que una escala admite.
+ * Con F(g)=0 (TFLOPS en cero mientras se reteclea el campo) el motor devuelve
+ * G=Infinity y TPOT=NaN sin dejar de ser "viable", y un solo NaN en el arreglo
+ * vuelve NaN el Math.max de la escala y borra la gráfica entera.
+ */
+export const dibujable = (f: Fila): boolean =>
+  f.dim.viable && Number.isFinite(f.dim.tpot_ms) && Number.isFinite(f.dim.costo_hora);
+
 /** Cuántos puntos se muestrean para dibujar la frontera de intercambio. */
 const PUNTOS_FRONTERA = 24;
 
@@ -127,8 +136,11 @@ export function calcular(e: Estado): Resultados {
   const total = activasTotal(carga);
   const bc = bytesCache(carga, modelo);
 
+  // Se calculan TODAS las GPUs del catálogo, incluidas las desmarcadas: su fila
+  // tiene que seguir en la tabla, porque es donde vive la única casilla que
+  // puede volver a marcarlas. El filtro por `on` se aplica al derivar `ok`, que
+  // es lo que alimenta gráficas, Pareto y recomendación.
   const filas: Fila[] = e.gpus
-    .filter((g) => g.on)
     .map((g) => {
       // El factor de eficiencia es común a todo el catálogo: descuenta el ancho
       // de banda y los FLOPS nominales de cada GPU por igual.
@@ -157,11 +169,11 @@ export function calcular(e: Estado): Resultados {
       };
     });
 
-  const ok = filas.filter((f) => f.techos.viable);
+  const ok = filas.filter((f) => f.gpu.on && f.techos.viable);
 
   // Frente de Pareto en costo/TPOT: nadie la domina en ambas a la vez.
   const pareto = ok
-    .filter((f) => f.dim.viable)
+    .filter(dibujable)
     .filter(
       (f, _i, arr) =>
         !arr.some(
@@ -174,7 +186,7 @@ export function calcular(e: Estado): Resultados {
     )
     .sort((a, b) => a.dim.tpot_ms - b.dim.tpot_ms);
 
-  const candidatas = e.modo === "dimensionar" ? ok.filter((f) => f.dim.viable) : ok;
+  const candidatas = e.modo === "dimensionar" ? ok.filter(dibujable) : ok;
   const mejor = candidatas.length
     ? candidatas.reduce((a, b) =>
         e.modo === "dimensionar"

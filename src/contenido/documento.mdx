@@ -60,13 +60,17 @@ y el trabajo aritmético, contando dos operaciones — una multiplicación y una
 suma — por parámetro y por secuencia:
 
 $$
-\text{FLOP por paso} \;=\; 2 \cdot N \cdot B
+\text{FLOP por paso} \;=\; 2 \cdot N \cdot 10^{9} \cdot B
 $$
+
+donde **$N$ está en miles de millones de parámetros**, la convención del código
+y de los catálogos: por eso el factor $10^{9}$ aparece explícito en todo lo que
+toca cómputo.
 
 Dividiendo cada uno por el recurso que lo consume:
 
 $$
-\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + B \cdot C \cdot \mathrm{KV}_t}{W},\; \frac{2 N B}{F} \right)
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + B \cdot C \cdot \mathrm{KV}_t}{W},\; \frac{2 N 10^{9} B}{F} \right)
 $$
 
 donde $W$ es el ancho de banda efectivo en bytes/s y $F$ los FLOPS efectivos.
@@ -114,7 +118,7 @@ tamaño. $H$ son las cabezas de KV, que con *grouped-query attention* son muchas
 menos que las de consulta, y $d_k$ la dimensión por cabeza.
 
 La diferencia es brutal. Un denso de 27B con 46 capas de atención y GQA 8×128
-gasta 92 KB por token de contexto en fp16. Un híbrido de 27B con 16 capas de
+gasta 92 KB por token de contexto en fp8. Un híbrido de 27B con 16 capas de
 atención y 4 cabezas de 256 gasta 32 KB en fp8 — casi tres veces menos. Con
 30 000 tokens de contexto eso es la diferencia entre 2.6 GB y 0.9 GB **por
 sesión**.
@@ -159,7 +163,7 @@ sobra: leer los pesos ya no cabe en el tiempo pedido.
 que los Tensor Cores sostienen dentro del SLO es:
 
 $$
-B_{\text{comp}} \;=\; \frac{\mathrm{SLO} \cdot F}{2 N}
+B_{\text{comp}} \;=\; \frac{\mathrm{SLO} \cdot F}{2 N \cdot 10^{9}}
 $$
 
 Nótese que los dos primeros techos se miden en bytes de caché y el tercero en
@@ -260,7 +264,7 @@ Con $G$ decidido, el lote real por GPU es $B = A / G$ y el TPOT que efectivament
 se logra sale de la misma ecuación del principio:
 
 $$
-\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + \mathrm{KV}_{\text{total}} / G}{W},\; \frac{2 N B}{F} \right)
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + \mathrm{KV}_{\text{total}} / G}{W},\; \frac{2 N 10^{9} B}{F} \right)
 $$
 
 Ese TPOT suele quedar **por debajo** del SLO, porque el redondeo hacia arriba
@@ -310,17 +314,23 @@ cuello migra hacia latencia, y después hacia memoria.
 
 <DiagramaRegimenes />
 
+Ojo con la lectura: **los regímenes son dos, no tres**. Cuál de los dos techos de
+bytes manda —memoria o latencia— no depende del contexto en absoluto, así que el
+sistema pasa de cómputo al techo de bytes más estrecho y ahí se queda. Los dos
+cruces que siguen son el mismo salto medido contra cada techo; el que ocurre
+antes es el real, y el otro queda por detrás sin cambiar nada.
+
 Los cruces se obtienen igualando las restricciones de a pares. Igualando cómputo
 con latencia:
 
 $$
-C_{\text{eq}1} \;=\; \frac{\left(\mathrm{SLO} \cdot W - P_m\right) \cdot 2N}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+C_{\text{eq}1} \;=\; \frac{\left(\mathrm{SLO} \cdot W - P_m\right) \cdot 2 N \cdot 10^{9}}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
 $$
 
 Y cómputo con memoria:
 
 $$
-C_{\text{eq}3} \;=\; \frac{\left(V_t - P_m - O\right) \cdot 2N}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+C_{\text{eq}3} \;=\; \frac{\left(V_t - P_m - O\right) \cdot 2 N \cdot 10^{9}}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
 $$
 
 El cruce entre memoria y latencia es directo, porque ambos techos acotan bytes:
@@ -334,7 +344,7 @@ agreguen:
 $$
 \left.\frac{\text{tok}}{\text{s}}\right|_{\text{memoria}} = \frac{W}{\mathrm{KV}_t \cdot C}
 \qquad
-\left.\frac{\text{tok}}{\text{s}}\right|_{\text{cómputo}} = \frac{F}{2N}
+\left.\frac{\text{tok}}{\text{s}}\right|_{\text{cómputo}} = \frac{F}{2 N \cdot 10^{9}}
 $$
 
 El primero cae linealmente con el contexto. El segundo no depende del contexto en
@@ -342,8 +352,8 @@ absoluto. Su cruce es otra forma de ver dónde está la frontera entre regímene
 
 ## El factor de eficiencia
 
-Todo lo anterior sale optimista entre un 20 % y un 40 %. Las razones son
-conocidas y ninguna es un defecto del modelo:
+Todo lo anterior sale optimista, y por bastante más que un margen de error. Las
+razones son conocidas y ninguna es un defecto del modelo:
 
 - El caché compite por el mismo ancho de banda que los pesos, y el acceso no es
   perfectamente secuencial.
@@ -363,7 +373,8 @@ F = \eta \cdot F_{\text{nominal}}
 $$
 
 El valor por defecto, $\eta = 0.5$, es lo que respaldan los benchmarks públicos
-en modelos grandes. Es un parámetro, no una constante física: **si tienes una
+en modelos grandes: la mitad del nominal, es decir un TPOT real del orden del
+doble del teórico. Es un parámetro, no una constante física: **si tienes una
 medición real de tu motor de inferencia, úsala**. Es la perilla que más cambia el
 resultado después del contexto.
 

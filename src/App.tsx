@@ -7,7 +7,7 @@
  */
 
 import Documento from "./contenido/documento.mdx";
-import Calculadora from "./components/Calculadora";
+import SeccionCalculadora from "./components/SeccionCalculadora";
 import Navegacion from "./components/Navegacion";
 
 export function App() {
@@ -48,7 +48,7 @@ export function App() {
         </article>
       </div>
 
-      <Calculadora />
+      <SeccionCalculadora />
 
       <footer className="border-t border-linea bg-superficie">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 text-xs text-suave leading-relaxed">

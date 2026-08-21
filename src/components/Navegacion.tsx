@@ -27,7 +27,6 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
       id: n.id,
       titulo: n.textContent?.trim() ?? n.id,
     }));
-    lista.push({ id: "calculadora", titulo: "Calculadora" });
     setSecciones(lista);
     if (lista.length) setActiva(lista[0].id);
 
@@ -43,11 +42,6 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
           const el = document.getElementById(s.id);
           if (!el) continue;
           if (el.getBoundingClientRect().top <= LINEA_LECTURA) actual = s.id;
-        }
-        // Al final de la página siempre gana la última: si no, la sección de
-        // cierre nunca se marca porque ya no hay scroll disponible.
-        if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) {
-          actual = lista[lista.length - 1]?.id ?? actual;
         }
         setActiva(actual);
       });
@@ -95,7 +89,7 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
                       (activa === s.id ? "text-tinta bg-fondo font-medium" : "text-suave")
                     }
                   >
-                    <span className="mono text-xs opacity-60 w-5 shrink-0">
+                    <span className="mono text-xs text-suave w-5 shrink-0">
                       {String(i + 1).padStart(2, "0")}
                     </span>
                     {s.titulo}
@@ -103,6 +97,16 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
                 </li>
               ))}
             </ol>
+            {/* La calculadora no es una sección del documento: es el destino al
+                final. Va como acción aparte para que el resaltado de sección no
+                marque nunca algo que ya no está a la vista. */}
+            <a
+              href="#calculadora"
+              onClick={() => setAbierto(false)}
+              className="flex items-center gap-2 px-4 py-3 text-sm border-t border-linea text-mem"
+            >
+              Ir a la calculadora ↓
+            </a>
           </nav>
         )}
       </div>
@@ -128,7 +132,7 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
                   }
                   aria-current={act ? "true" : undefined}
                 >
-                  <span className="mono text-xs opacity-50 shrink-0">
+                  <span className="mono text-xs text-suave shrink-0">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="min-w-0">{s.titulo}</span>
@@ -137,6 +141,12 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
             );
           })}
         </ol>
+        <a
+          href="#calculadora"
+          className="mt-3 inline-flex items-center gap-2 text-sm text-mem hover:underline"
+        >
+          Ir a la calculadora ↓
+        </a>
       </nav>
     </>
   );

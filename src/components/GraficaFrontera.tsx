@@ -161,7 +161,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
             } con ${fmt(Ua)} agentes`}
             style={{ cursor: "pointer" }}
           >
-            <circle cx={x} cy={y} r={16} fill="transparent" />
+            <circle cx={x} cy={y} r={26} fill="transparent" />
             <circle cx={x} cy={y} r={hv ? 8 : 5.5} fill={col} opacity={hv ? 1 : 0.88} />
             <text
               x={x}
