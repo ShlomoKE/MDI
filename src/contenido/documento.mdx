@@ -1,0 +1,441 @@
+import {
+  DiagramaCiclo,
+  DiagramaTechos,
+  DiagramaRegimenes,
+  DiagramaLote,
+} from "../components/Diagramas";
+
+## De qué trata esto
+
+**MDI** —Modelo de Dimensionamiento de Infraestructura de Inferencia para cargas
+mixtas de usuarios y agentes— responde dos preguntas simétricas: dada una carga,
+cuánto hardware hace falta; y dado el hardware, para cuánta carga alcanza.
+
+Servir un modelo de lenguaje no es un problema de "cuánta GPU necesito" sino de
+tres presupuestos que compiten: cuántos bytes caben en la VRAM, cuántos bytes se
+alcanzan a mover dentro del tiempo que el usuario tolera, y cuántas
+multiplicaciones caben en ese mismo tiempo. Los tres se evalúan sobre la misma
+GPU y el resultado siempre es el más restrictivo de los tres.
+
+Lo de **cargas mixtas** no es un adorno. Un humano y un agente no son la misma
+unidad de demanda ni por asomo: el agente genera casi todo el tiempo y arrastra
+un contexto diez veces mayor. Tratarlos como si fueran lo mismo es el error que
+hace que un dimensionamiento se quede corto por un orden de magnitud, y buena
+parte de este documento existe para poner número a esa diferencia.
+
+Aquí se derivan las ecuaciones y al final está la calculadora que las aplica.
+Todo el cálculo ocurre en tu navegador: no hay servidor, no se envía nada, y la
+configuración que armes viaja en la URL para que la puedas compartir por enlace.
+
+<div className="my-6">
+  <a href="#calculadora" className="inline-flex items-center gap-2 rounded border border-linea bg-superficie px-4 py-2 no-underline text-tinta hover:bg-fondo transition-colors">Saltar a la calculadora ↓</a>
+</div>
+
+> La matemática de este documento y la de la calculadora son el mismo código.
+> El motor está escrito una vez en Python (`motor.py`, la fuente de verdad) y
+> portado a TypeScript sin cambiar ninguna fórmula; una batería de pruebas
+> compara los dos, valor por valor, con igualdad exacta de punto flotante.
+
+## El ciclo de decodificación
+
+Un modelo autorregresivo genera un token a la vez. Para producir el siguiente,
+la GPU tiene que hacer dos cosas: **leer** los pesos del modelo desde la memoria
+y **multiplicar** la activación por ellos. Las dos cosas ocurren a la vez, en
+unidades distintas del chip, así que el paso tarda lo que tarde la más lenta.
+
+La métrica que le importa al usuario es el **TPOT** — *time per output token*, el
+tiempo entre dos tokens consecutivos en la pantalla. Un TPOT de 30 ms son unos
+33 tokens por segundo, más o menos el doble de rápido que una lectura cómoda.
+
+<DiagramaCiclo />
+
+En un paso de decodificación con lote $B$ y contexto promedio $C$ por secuencia,
+el tráfico de memoria es:
+
+$$
+\text{bytes por paso} \;=\; \underbrace{P_m}_{\text{pesos}} \;+\; \underbrace{B \cdot C \cdot \mathrm{KV}_t}_{\text{caché}}
+$$
+
+y el trabajo aritmético, contando dos operaciones — una multiplicación y una
+suma — por parámetro y por secuencia:
+
+$$
+\text{FLOP por paso} \;=\; 2 \cdot N \cdot B
+$$
+
+Dividiendo cada uno por el recurso que lo consume:
+
+$$
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + B \cdot C \cdot \mathrm{KV}_t}{W},\; \frac{2 N B}{F} \right)
+$$
+
+donde $W$ es el ancho de banda efectivo en bytes/s y $F$ los FLOPS efectivos.
+Es un máximo, no una suma: los dos caminos avanzan en paralelo.
+
+### El piso teórico
+
+Si el lote es una sola secuencia y el contexto es despreciable, el término del
+caché desaparece y queda el número más útil de todo el análisis:
+
+$$
+\mathrm{TPOT}_{\min} \;=\; \frac{P_m}{W}
+$$
+
+Un modelo de 27 mil millones de parámetros en fp8 pesa 27 GB. Sobre una H100
+SXM con 3350 GB/s nominales y un factor de eficiencia de 0.5 — es decir 1675
+GB/s reales — el piso es de unos 16 ms por token. **Ninguna configuración,
+ningún lote, ninguna optimización de servicio va a bajar de ahí sin cambiar el
+modelo, la cuantización o el hardware.** Todo lo demás en este documento es
+cuánto se degrada ese piso al agregar carga.
+
+## Qué ocupa la VRAM
+
+Dos cosas grandes y una mediana.
+
+**Los pesos.** El modelo entero tiene que estar residente. Su tamaño depende de
+la cuantización, $b_w$ bytes por parámetro:
+
+$$
+P_m \;=\; N \cdot 10^{9} \cdot b_w
+$$
+
+**El caché KV.** Por cada token que ya pasó por el modelo hay que guardar dos
+vectores — clave y valor — en cada capa que hace atención. El costo por token de
+contexto es:
+
+$$
+\mathrm{KV}_t \;=\; 2 \cdot L_a \cdot H \cdot d_k \cdot b_{kv}
+$$
+
+El factor 2 son clave y valor. $L_a$ son **las capas que generan caché, no las
+totales**: las arquitecturas híbridas intercalan capas de atención con capas que
+no lo son, y ahí está casi toda la diferencia entre dos modelos del mismo
+tamaño. $H$ son las cabezas de KV, que con *grouped-query attention* son muchas
+menos que las de consulta, y $d_k$ la dimensión por cabeza.
+
+La diferencia es brutal. Un denso de 27B con 46 capas de atención y GQA 8×128
+gasta 92 KB por token de contexto en fp16. Un híbrido de 27B con 16 capas de
+atención y 4 cabezas de 256 gasta 32 KB en fp8 — casi tres veces menos. Con
+30 000 tokens de contexto eso es la diferencia entre 2.6 GB y 0.9 GB **por
+sesión**.
+
+**El overhead del motor.** Buffers de activaciones, grafos de CUDA, el
+planificador, fragmentación del asignador de bloques. Es un par de gigabytes que
+no se recuperan; en las ecuaciones aparece como $O$.
+
+Lo que sobra es lo único que se puede dedicar al caché:
+
+$$
+\mathrm{KV}_{\max}^{\text{mem}} \;=\; V_t - P_m - O
+$$
+
+## Las tres restricciones
+
+Aquí es donde el problema se vuelve interesante. Hay tres techos y actúan sobre
+cosas distintas.
+
+<DiagramaTechos />
+
+**Memoria.** Los bytes de caché que caben físicamente, ya descontados los pesos
+y el overhead:
+
+$$
+\mathrm{KV}_{\max}^{\text{mem}} \;=\; V_t - P_m - O
+$$
+
+Si esto sale negativo el modelo no cabe en esa GPU y no hay nada que discutir.
+
+**Latencia.** El SLO acota cuántos bytes se alcanzan a leer por paso. De ese
+presupuesto los pesos ya se comieron $P_m$; lo que queda es para el caché:
+
+$$
+\mathrm{KV}_{\max}^{\text{lat}} \;=\; \mathrm{SLO} \cdot W - P_m
+$$
+
+Si esto sale negativo, el SLO es inalcanzable en esa GPU aunque tenga VRAM de
+sobra: leer los pesos ya no cabe en el tiempo pedido.
+
+**Cómputo.** El tercer techo no acota bytes sino **secuencias**. El lote máximo
+que los Tensor Cores sostienen dentro del SLO es:
+
+$$
+B_{\text{comp}} \;=\; \frac{\mathrm{SLO} \cdot F}{2 N}
+$$
+
+Nótese que los dos primeros techos se miden en bytes de caché y el tercero en
+número de secuencias. Es la razón por la que no se pueden sumar ni promediar:
+cada uno se compara contra la demanda en su propia unidad y después se toma el
+peor.
+
+## El lote y por qué sale casi gratis
+
+Los pesos se leen **una sola vez por paso**, sin importar cuántas secuencias haya
+en el lote. El caché, en cambio, se paga por secuencia.
+
+<DiagramaLote />
+
+Por token útil generado, el costo es:
+
+$$
+\frac{\text{bytes}}{\text{token}} \;=\; \frac{P_m}{B} \;+\; C \cdot \mathrm{KV}_t
+$$
+
+El primer término se diluye con el lote; el segundo no. Con contextos cortos el
+sistema opera en la zona donde los pesos dominan y agregar sesiones es casi
+gratis: es toda la economía de la inferencia servida. Con contextos largos el
+segundo término manda y cada sesión nueva cuesta lo suyo, íntegro.
+
+Por eso el contexto es la variable que más mueve el resultado, más que el número
+de usuarios. Duplicar los usuarios duplica la demanda de caché; duplicar el
+contexto también, pero además empuja el sistema hacia el régimen donde el lote
+ya no ayuda.
+
+## Cuánta carga hay realmente
+
+Un usuario registrado no consume nada mientras lee. Lo que cuenta es cuántas
+sesiones están **generando** en un instante cualquiera. Cada población se
+describe con tres números: cuántos hay ($U$), qué fracción del tiempo generan
+($D$, el *duty cycle*) y cuánto contexto arrastran ($C$).
+
+$$
+A \;=\; U \cdot D
+$$
+
+Con dos poblaciones — humanos y agentes — la demanda total de caché es:
+
+$$
+\mathrm{KV}_{\text{total}} \;=\; \mathrm{KV}_t \cdot \left( U_h D_h C_h + U_a D_a C_a \right)
+$$
+
+La diferencia entre las dos poblaciones no es de grado, es de naturaleza. Un
+humano escribe, espera, lee, se distrae: genera quizá el 15 % del tiempo, con
+unos miles de tokens de contexto. Un agente encadena llamadas a herramientas sin
+pausas humanas y arrastra la conversación completa más los resultados de cada
+herramienta: puede estar generando el 95 % del tiempo con decenas de miles de
+tokens encima.
+
+### κ — el precio de un agente en usuarios
+
+El cociente entre lo que cuesta un agente y lo que cuesta un usuario es:
+
+$$
+\kappa \;=\; \frac{D_a \cdot C_a}{D_h \cdot C_h}
+$$
+
+Con los valores por defecto — 15 % y 3000 tokens contra 95 % y 30 000 — un solo
+agente vale **63 usuarios**. Es el número que hay que tener en la cabeza al
+planear: cuarenta agentes de código pesan más que dos mil personas usando un
+chat.
+
+$\kappa$ es también la pendiente de la frontera de intercambio en el modo
+capacidad: cada agente que se agrega al plan desaloja $\kappa$ usuarios.
+
+## Modo dimensionar: cuántas GPUs hacen falta
+
+Dada la carga, cada restricción exige por su cuenta una cantidad mínima de GPUs.
+Las dos primeras reparten bytes de caché; la tercera reparte secuencias.
+
+$$
+G_{\text{mem}} = \frac{\mathrm{KV}_{\text{total}}}{V_t - P_m - O}
+\qquad
+G_{\text{lat}} = \frac{\mathrm{KV}_{\text{total}}}{\mathrm{SLO} \cdot W - P_m}
+\qquad
+G_{\text{comp}} = \frac{A}{B_{\text{comp}}}
+$$
+
+El resultado es la peor de las tres, redondeada hacia arriba y con un piso de una
+unidad:
+
+$$
+G \;=\; \max\!\left(1,\; \left\lceil \max\left(G_{\text{mem}},\, G_{\text{lat}},\, G_{\text{comp}}\right) \right\rceil \right)
+$$
+
+Reportar **cuál de las tres domina** importa tanto como el número, porque
+determina qué hacer al respecto. Si manda memoria, conviene más VRAM o recortar
+contexto. Si manda latencia, conviene más ancho de banda — y no sirve de nada
+agregar VRAM. Si manda cómputo, el lote saturó los Tensor Cores y solo ayuda un
+modelo más chico o más unidades.
+
+Con $G$ decidido, el lote real por GPU es $B = A / G$ y el TPOT que efectivamente
+se logra sale de la misma ecuación del principio:
+
+$$
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + \mathrm{KV}_{\text{total}} / G}{W},\; \frac{2 N B}{F} \right)
+$$
+
+Ese TPOT suele quedar **por debajo** del SLO, porque el redondeo hacia arriba
+regala holgura. Esa holgura es real y se puede gastar en contexto, en usuarios o
+en dormir tranquilo.
+
+## Modo capacidad: para cuánta carga alcanza
+
+La pregunta inversa es más común de lo que parece: el hardware ya está comprado
+y lo que se quiere saber es a cuánta gente se le puede prometer servicio.
+
+Se fijan $G$ unidades y un número de agentes, y se despeja cuántos humanos caben
+además. El techo de bytes disponible es el menor de los dos techos de bytes,
+multiplicado por las unidades:
+
+$$
+\mathrm{KV}_{\text{disp}} \;=\; G \cdot \min\!\left( \mathrm{KV}_{\max}^{\text{mem}},\; \mathrm{KV}_{\max}^{\text{lat}} \right)
+$$
+
+Restando lo que ya se llevaron los agentes y dividiendo entre lo que cuesta un
+usuario registrado:
+
+$$
+U_h \;\le\; \frac{\mathrm{KV}_{\text{disp}} - U_a \cdot \mathrm{KV}_t D_a C_a}{\mathrm{KV}_t D_h C_h}
+$$
+
+Y en paralelo, la restricción de cómputo sobre el mismo reparto:
+
+$$
+U_h \;\le\; \frac{G \cdot B_{\text{comp}} - U_a D_a}{D_h}
+$$
+
+El resultado es el menor de los dos. Si los agentes por sí solos ya no caben, no
+hay usuarios que agregar y la configuración simplemente no alcanza.
+
+Los dos modos comparten el mismo núcleo: son la misma desigualdad despejada para
+distintas incógnitas. Si dimensionar devuelve $G$ para una carga, capacidad con
+ese mismo $G$ tiene que admitir esa carga — y las pruebas del motor verifican
+justamente eso sobre todo el catálogo.
+
+## Regímenes y cruces
+
+Cuál restricción manda no es una propiedad del hardware: **depende del
+contexto**. Con contextos cortos el caché es despreciable y el sistema es un
+problema de cómputo. Al alargarlo, el caché empieza a dominar el tráfico y el
+cuello migra hacia latencia, y después hacia memoria.
+
+<DiagramaRegimenes />
+
+Los cruces se obtienen igualando las restricciones de a pares. Igualando cómputo
+con latencia:
+
+$$
+C_{\text{eq}1} \;=\; \frac{\left(\mathrm{SLO} \cdot W - P_m\right) \cdot 2N}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+$$
+
+Y cómputo con memoria:
+
+$$
+C_{\text{eq}3} \;=\; \frac{\left(V_t - P_m - O\right) \cdot 2N}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+$$
+
+El cruce entre memoria y latencia es directo, porque ambos techos acotan bytes:
+manda memoria cuando $V_t - P_m - O \le \mathrm{SLO} \cdot W - P_m$, es decir
+cuando la VRAM se agota antes que el presupuesto de tiempo. Ese régimen no
+depende del contexto en absoluto — es una propiedad de la GPU frente al SLO.
+
+Hay además dos techos absolutos que no se pueden superar por más sesiones que se
+agreguen:
+
+$$
+\left.\frac{\text{tok}}{\text{s}}\right|_{\text{memoria}} = \frac{W}{\mathrm{KV}_t \cdot C}
+\qquad
+\left.\frac{\text{tok}}{\text{s}}\right|_{\text{cómputo}} = \frac{F}{2N}
+$$
+
+El primero cae linealmente con el contexto. El segundo no depende del contexto en
+absoluto. Su cruce es otra forma de ver dónde está la frontera entre regímenes.
+
+## El factor de eficiencia
+
+Todo lo anterior sale optimista entre un 20 % y un 40 %. Las razones son
+conocidas y ninguna es un defecto del modelo:
+
+- El caché compite por el mismo ancho de banda que los pesos, y el acceso no es
+  perfectamente secuencial.
+- Hay overhead de lanzamiento de kernels entre capas.
+- El *scheduler* del motor de inferencia no mantiene el lote lleno todo el
+  tiempo: entran y salen secuencias.
+- El ancho de banda nominal del fabricante se mide en condiciones que un motor de
+  inferencia real no reproduce.
+
+En vez de modelar cada efecto por separado, el motor los mete en un solo factor
+$\eta$ que descuenta **tanto el ancho de banda como los FLOPS**:
+
+$$
+W = \eta \cdot W_{\text{nominal}}
+\qquad
+F = \eta \cdot F_{\text{nominal}}
+$$
+
+El valor por defecto, $\eta = 0.5$, es lo que respaldan los benchmarks públicos
+en modelos grandes. Es un parámetro, no una constante física: **si tienes una
+medición real de tu motor de inferencia, úsala**. Es la perilla que más cambia el
+resultado después del contexto.
+
+## Cómo leer la calculadora
+
+En el modo **dimensionar** cada punto de la gráfica es una GPU: en el eje
+horizontal el TPOT que logra, en el vertical lo que cuesta por hora la cantidad
+de unidades que hacen falta. La banda de la derecha es la zona que incumple el
+SLO. La línea punteada une el frente de Pareto — fuera de ella siempre hay una
+opción mejor en las dos dimensiones a la vez.
+
+Las barras de presión de la tabla muestran cuántas GPUs exige cada restricción
+por separado. La barra llena es la que fija el total; las otras dos, atenuadas,
+son la holgura que sobra.
+
+En el modo **capacidad** cada curva es una GPU. Todos los puntos sobre ella
+saturan el sistema, así que no hay un óptimo único: es el intercambio real entre
+atender agentes y atender usuarios, y la pendiente es $\kappa$. El codo que
+aparece en algunas curvas es el punto donde el cuello cambia de bytes a cómputo.
+
+Los colores son consistentes en todo el sitio: **verde pino** cuando manda
+memoria, **naranja quemado** cuando manda latencia, **azul** cuando manda
+cómputo.
+
+## Limitaciones
+
+Este modelo es una cota de primer orden, útil para decidir el orden de magnitud
+del hardware y para entender qué restricción manda. No es un simulador. Estas
+son las cosas que **no** contempla, en orden aproximado de impacto:
+
+**Prefix caching.** El cálculo supone que cada sesión tiene su propio caché
+completo. En la práctica los agentes que comparten un mismo system prompt —o un
+mismo repositorio cargado en contexto— pueden reutilizar el prefijo entre
+sesiones, y el ahorro es enorme: es exactamente el término $C_a$ el que se
+comparte, y es el término dominante. **Con prefix caching activo, este cálculo
+sobredimensiona**, a veces por un factor considerable.
+
+**Modelos MoE.** La fórmula del cómputo y la del tráfico de pesos suponen que se
+leen y se usan **todos** los parámetros en cada token. En una mezcla de expertos
+solo se activa una fracción, así que $N$ debería ser el número de parámetros
+activos para el cómputo y el total para la VRAM: son dos números distintos y aquí
+hay uno solo. Para un MoE, este modelo no aplica sin modificarlo.
+
+**Paralelismo tensorial.** Se asume una réplica completa del modelo por GPU. Con
+paralelismo tensorial los pesos se reparten entre varias unidades, lo que cambia
+tanto $P_m$ por GPU como el patrón de tráfico —y agrega comunicación entre GPUs,
+que aquí no aparece por ningún lado.
+
+**Variabilidad de la demanda.** Todo el cálculo usa promedios: duty cycle
+promedio, contexto promedio. La demanda real llega en ráfagas, y una cola que se
+dimensiona al promedio se satura en el pico. **Los picos requieren holgura**, y
+cuánta es una decisión que este modelo no toma por ti.
+
+**Chunked prefill y el efecto del prefill sobre el decode.** Procesar el prompt
+inicial es una operación limitada por cómputo, no por memoria, y compite por la
+misma GPU que está decodificando. Los motores modernos intercalan trozos de
+prefill entre pasos de decode, lo que degrada el TPOT de las sesiones activas de
+una manera que aquí no se modela en absoluto.
+
+Además, dos advertencias sobre los valores por defecto:
+
+- **Los duty cycles están fijados en el peor caso** y no son editables a
+  propósito: 0.15 para humanos y 0.95 para agentes. Trazas reales de agentes de
+  código dan más bien ~0.42 —trece segundos generando por dieciocho de
+  herramientas—; 0.95 corresponde a un agente con herramientas muy rápidas. Si
+  tus agentes se parecen más a la primera cifra, el dimensionamiento sale
+  holgado.
+- **Los precios son referenciales.** Pretenden representar CAPEX amortizado más
+  OPEX, varían muchísimo entre proveedores y regiones, y son editables en la
+  tabla precisamente porque no hay un número correcto. No los uses como
+  cotización.
+
+Dicho todo eso: el modelo acierta en lo que importa para decidir. Cuál
+restricción manda, qué orden de magnitud de hardware hace falta, y cuánto cuesta
+en usuarios cada agente que se agrega al plan.

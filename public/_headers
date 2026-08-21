@@ -1,0 +1,23 @@
+# Cabeceras de Cloudflare Pages.
+#
+# Los archivos bajo /assets llevan hash en el nombre, así que se pueden cachear
+# para siempre. El HTML no: tiene que revalidarse en cada visita para que un
+# despliegue nuevo llegue de inmediato.
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.svg
+  Cache-Control: public, max-age=86400
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+  # Todo el cálculo ocurre en el navegador: la página no necesita hablar con
+  # nadie, así que se le prohíbe hacerlo.
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'

@@ -1,0 +1,9 @@
+# Cloudflare Pages — sitio estático, sin Workers ni bindings.
+#
+# Con la integración de Git, Cloudflare toma el comando de build y el directorio
+# de salida de la configuración del proyecto en el panel; este archivo existe
+# para que `wrangler pages deploy` funcione igual desde la terminal y para dejar
+# la configuración escrita en el repositorio.
+name = "mdi"
+compatibility_date = "2026-08-21"
+pages_build_output_dir = "dist"

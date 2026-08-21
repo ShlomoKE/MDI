@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.wrangler/
+.vite/
+*.local
+.env
+.env.*
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
+.vscode/
+.idea/
+
+# artefactos de tsc -b
+*.tsbuildinfo
+
+# el encargo original, no forma parte del sitio
+prompt.txt

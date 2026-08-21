@@ -1,0 +1,231 @@
+/* Fuentes autoalojadas: IBM Plex Sans, Sans Condensed y Mono, subconjunto latino.
+   Van servidas desde el propio dominio para no bloquear el render con una
+   petición a un tercero. */
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-600.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-700.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+
+/* KaTeX trae sus propias fuentes; Vite las copia a dist/assets. */
+@import "katex/dist/katex.min.css";
+
+@import "tailwindcss";
+
+@theme {
+  /* La paleta del prototipo: verde pino para memoria, naranja quemado para
+     latencia, azul para cómputo. */
+  --color-fondo: #f1f3f2;
+  --color-superficie: #ffffff;
+  --color-tinta: #111815;
+  --color-suave: #6e7a75;
+  --color-linea: #d3dad7;
+
+  --color-mem: #1f5f4c;
+  --color-lat: #b4451f;
+  --color-comp: #4a4e8c;
+
+  --color-mem-tenue: #dce9e4;
+  --color-lat-tenue: #f6e2d8;
+  --color-comp-tenue: #e0e1ef;
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* La navegación lateral es sticky en escritorio, pero en móvil hay una
+       barra arriba: el offset evita que el título quede debajo de ella. */
+    scroll-padding-top: 4.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  body {
+    background: var(--color-fondo);
+    color: var(--color-tinta);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Las flechitas de los number input distraen; se dejan visibles pero tenues. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.35;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-comp);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Rótulo de sección: versalitas condensadas con interletraje, como en el
+     prototipo. */
+  .rotulo {
+    font-family: var(--font-cond);
+    font-weight: 600;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .campo {
+    border: 1px solid var(--color-linea);
+    background: var(--color-superficie);
+    color: var(--color-tinta);
+    border-radius: 0.25rem;
+    outline: none;
+  }
+  .campo:focus {
+    border-color: var(--color-comp);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Tipografía del documento. El texto viene de MDX, así que se estiliza por
+   etiqueta en lugar de con clases.
+   -------------------------------------------------------------------------- */
+
+.documento {
+  max-width: 46rem;
+}
+
+.documento h2 {
+  font-family: var(--font-cond);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 1.95rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 3.5rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-linea);
+  scroll-margin-top: 5rem;
+}
+
+.documento h3 {
+  font-family: var(--font-cond);
+  font-weight: 600;
+  font-size: 1.15rem;
+  line-height: 1.3;
+  margin: 2rem 0 0.6rem;
+  scroll-margin-top: 5rem;
+}
+
+.documento p {
+  margin: 0.9rem 0;
+  line-height: 1.7;
+}
+
+.documento ul,
+.documento ol {
+  margin: 0.9rem 0;
+  padding-left: 1.35rem;
+  line-height: 1.7;
+}
+
+.documento ul {
+  list-style: disc;
+}
+.documento ol {
+  list-style: decimal;
+}
+.documento li {
+  margin: 0.35rem 0;
+}
+.documento li::marker {
+  color: var(--color-suave);
+}
+
+.documento strong {
+  font-weight: 600;
+}
+
+.documento a {
+  color: var(--color-mem);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.documento code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-fondo);
+  border: 1px solid var(--color-linea);
+  border-radius: 0.2rem;
+  padding: 0.05em 0.3em;
+}
+
+.documento blockquote {
+  margin: 1.25rem 0;
+  padding: 0.9rem 1.1rem;
+  border-left: 3px solid var(--color-mem);
+  background: var(--color-mem-tenue);
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.documento blockquote p {
+  margin: 0.35rem 0;
+}
+
+.documento hr {
+  border: 0;
+  border-top: 1px solid var(--color-linea);
+  margin: 2.5rem 0;
+}
+
+/* Ecuaciones en bloque: centradas, con scroll propio si no caben. En móvil una
+   ecuación larga no debe empujar el ancho de la página. */
+.documento .katex-display {
+  margin: 1.4rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.35rem 0.1rem 0.6rem;
+}
+
+.katex {
+  font-size: 1.04em;
+}
+
+/* Tablas del documento. */
+.documento table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.9rem;
+}
+.documento th,
+.documento td {
+  border-bottom: 1px solid var(--color-linea);
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+}
+.documento th {
+  font-weight: 600;
+  color: var(--color-suave);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.documento td:not(:first-child) {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.documento th:not(:first-child) {
+  text-align: right;
+}
