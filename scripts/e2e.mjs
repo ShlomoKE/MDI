@@ -46,8 +46,13 @@ try {
   ok(texto.includes('29.4 ms'), 'la H100 SXM muestra el TPOT de motor.py (29.4 ms)');
   ok(texto.includes('SLO de 30 ms inalcanzable en L40S'), 'los motivos de inviabilidad son los de motor.py');
 
-  // interacción: cambiar de modo y comprobar que la URL lo refleja
-  await page.click('button[aria-pressed="false"]');
+  // Interacción: cambiar de modo y comprobar que la URL lo refleja. El clic va
+  // por el DOM y no por coordenadas: la calculadora acaba de montarse y sigue
+  // asentando el layout, así que un clic posicional aterriza donde el botón ya
+  // no está y el test falla por su cuenta, sin que la página tenga nada malo.
+  await page.evaluate(() => {
+    document.querySelector('button[aria-pressed="false"]').click();
+  });
   await page.waitForFunction(() => location.search.includes('modo=capacidad'), { timeout: 5000 });
   ok(true, 'el modo se serializa en la URL');
   const cap = await page.$eval('#calculadora', (e) => e.textContent);

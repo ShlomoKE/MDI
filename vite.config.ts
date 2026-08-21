@@ -23,11 +23,15 @@ export default defineConfig({
   ],
   build: {
     target: "es2022",
+    // La página va prerenderizada, así que el navegador puede pintarla sin
+    // ejecutar nada: precargar los módulos solo le quitaría ancho de banda al
+    // CSS, que sí bloquea el pintado. Los scripts siguen cargando, en diferido.
+    modulePreload: false,
     // KaTeX pesa; separarlo deja el bundle de la calculadora pequeño y permite
     // que el navegador cachee por separado lo que casi nunca cambia.
     rollupOptions: {
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             { name: "katex", test: /node_modules[\\/]katex/ },
             { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },

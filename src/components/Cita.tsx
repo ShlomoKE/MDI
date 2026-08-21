@@ -65,15 +65,25 @@ function Bloque({
   );
 }
 
+/** Mientras no haya navegador, la cita apunta al repositorio. */
+const ENLACE_POR_DEFECTO = "https://github.com/ShlomoKE/MDI";
+const FECHA_PUBLICACION = "2026-08-21";
+
 export function Cita() {
-  // En el primer render no hay URL fiable; se rellena al montar.
-  const [url, setUrl] = useState("");
+  // El primer render tiene que ser idéntico en el build y en el navegador: la
+  // página se prerenderiza, así que leer `window` o la fecha de hoy aquí haría
+  // que React encontrara un árbol distinto al hidratar. Ambos se rellenan
+  // después, en el efecto.
+  const [vivo, setVivo] = useState<{ url: string; consultado: string } | null>(null);
   useEffect(() => {
-    setUrl(window.location.origin + window.location.pathname);
+    setVivo({
+      url: window.location.origin + window.location.pathname,
+      consultado: iso(new Date()),
+    });
   }, []);
 
-  const enlace = url || "https://mdi.pages.dev/";
-  const consultado = iso(new Date());
+  const enlace = vivo?.url ?? ENLACE_POR_DEFECTO;
+  const consultado = vivo?.consultado ?? FECHA_PUBLICACION;
 
   const texto = `${AUTOR_APELLIDO_PRIMERO} (${ANIO}). ${TITULO}. ${enlace} (consultado el ${consultado})`;
 

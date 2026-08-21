@@ -73,6 +73,30 @@ describe("la página monta sin errores", () => {
     expect(saltos.length).toBeGreaterThan(0);
   });
 
+  it("el prefill se define antes de que el documento lo dé por sabido", () => {
+    montar();
+    const titulos = Array.from(contenedor.querySelectorAll("#documento h2[id]"));
+    const prefill = titulos.findIndex((h) => h.id === "antes-del-ciclo-el-prefill");
+    const decode = titulos.findIndex((h) => h.id === "el-ciclo-de-decodificación");
+    const limitaciones = titulos.findIndex((h) => h.id === "limitaciones");
+
+    expect(prefill, "falta la sección del prefill").toBeGreaterThanOrEqual(0);
+    // El orden importa: "chunked prefill" aparece en las limitaciones, y antes
+    // de esta sección el documento nunca decía qué era un prefill.
+    expect(prefill).toBeLessThan(decode);
+    expect(prefill).toBeLessThan(limitaciones);
+
+    // El MDX parte los párrafos en varias líneas, así que una frase puede llegar
+    // al DOM con un salto en medio: se compara sobre el texto normalizado.
+    const texto = (contenedor.textContent ?? "").replace(/\s+/g, " ");
+    expect(texto).toContain("TTFT");
+    expect(texto).toContain("time to first token");
+    // El caché KV deja de ser una fórmula caída del cielo.
+    expect(texto).toContain("caché KV");
+    // Y el TTFT tiene ecuación, no solo mención.
+    expect(texto).toMatch(/TTFT\s*=/);
+  });
+
   it("la sección de limitaciones declara todo lo que el modelo no contempla", () => {
     montar();
     const texto = contenedor.textContent ?? "";

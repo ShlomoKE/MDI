@@ -37,6 +37,43 @@ configuración que armes viaja en la URL para que la puedas compartir por enlace
 > portado a TypeScript sin cambiar ninguna fórmula; una batería de pruebas
 > compara los dos, valor por valor, con igualdad exacta de punto flotante.
 
+## Antes del ciclo: el prefill
+
+Toda petición atraviesa dos fases con comportamientos opuestos, y conviene
+separarlas antes de entrar en las ecuaciones.
+
+La primera es el **prefill**: el modelo procesa el prompt completo antes de
+emitir nada. Todos los tokens de entrada pasan en paralelo, en una sola
+operación matricial, y lo que produce no es texto sino el **caché KV** que la
+segunda fase va a consultar en cada paso. Por cada token del prompt se calculan
+y almacenan dos vectores en cada capa de atención —una clave, que dice cómo se
+anuncia ese token ante los que vengan después, y un valor, que es la información
+que aporta cuando alguno le presta atención—. De ahí salen los factores del
+$\mathrm{KV}_t$ que aparece en todo lo que sigue: el 2 son clave y valor, y el
+resto es cuántas capas y de qué tamaño.
+
+El prefill es un problema de cómputo, no de memoria: procesa miles de tokens de
+una vez y satura los Tensor Cores. Su métrica es el **TTFT** —*time to first
+token*, el tiempo que el usuario pasa frente a una pantalla vacía— y escala con
+la longitud del prompt:
+
+$$
+\mathrm{TTFT} \;=\; \frac{2 \cdot N \cdot 10^{9} \cdot T_{\text{in}}}{F}
+$$
+
+donde $T_{\text{in}}$ son los tokens del prompt y $F$ los FLOPS efectivos, los
+mismos que ya descuenta el factor de eficiencia.
+
+El decode es lo contrario. Genera un token a la vez, sin nada que paralelizar, y
+en cada paso vuelve a leer el modelo entero desde la memoria. Es un problema de
+ancho de banda, y es donde se va casi todo el tiempo de una respuesta: un prompt
+de mil tokens se procesa en decenas de milisegundos, mientras que generar mil
+tokens toma varios segundos.
+
+**El resto de este documento trata del decode**, porque es la fase que fija el
+hardware. El prefill reaparece más adelante, en las limitaciones, cuando se
+discute cómo compite por la misma GPU que está decodificando.
+
 ## El ciclo de decodificación
 
 Un modelo autorregresivo genera un token a la vez. Para producir el siguiente,
@@ -451,6 +488,69 @@ Además, dos advertencias sobre los valores por defecto:
 Dicho todo eso: el modelo acierta en lo que importa para decidir. Cuál
 restricción manda, qué orden de magnitud de hardware hace falta, y cuánto cuesta
 en usuarios cada agente que se agrega al plan.
+
+## Referencias
+
+Las restricciones que MDI formaliza están documentadas en la literatura por
+separado, y existen tratamientos más rigurosos del problema de capacidad
+—notablemente los enfoques de teoría de colas, que modelan la llegada de
+peticiones en vez de poblaciones. MDI no compite con ellos: adopta una
+parametrización deliberadamente operativa (cuántos usuarios, cuánto contexto,
+qué fracción del tiempo generan) porque son los números que un equipo tiene a la
+mano antes de comprar hardware, y porque hace explícito el intercambio entre
+poblaciones que los modelos agregados dejan implícito.
+
+### Arquitectura
+
+<div className="referencias">
+
+- **[1]** Vaswani, A. et al. (2017). *Attention Is All You Need*. NeurIPS.
+- **[2]** Su, J. et al. (2021). *RoFormer: Enhanced Transformer with Rotary Position Embedding*. [arXiv:2104.09864](https://arxiv.org/abs/2104.09864).
+- **[3]** Ainslie, J. et al. (2023). *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245).
+- **[4]** Sennrich, R., Haddow, B. & Birch, A. (2016). *Neural Machine Translation of Rare Words with Subword Units*. ACL.
+- **[5]** Holtzman, A. et al. (2020). *The Curious Case of Neural Text Degeneration*. ICLR.
+
+</div>
+
+### Inferencia y serving
+
+<div className="referencias">
+
+- **[6]** Pope, R. et al. (2022). *Efficiently Scaling Transformer Inference*. [arXiv:2211.05102](https://arxiv.org/abs/2211.05102).
+- **[7]** Yu, G.-I. et al. (2022). *Orca: A Distributed Serving System for Transformer-Based Generative Models*. OSDI.
+- **[8]** Kwon, W. et al. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. SOSP.
+- **[9]** Dao, T. et al. (2022). *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. [arXiv:2205.14135](https://arxiv.org/abs/2205.14135).
+
+</div>
+
+### Mediciones y benchmarks
+
+<div className="referencias">
+
+- **[10]** *FlashFormer: Whole-Model Kernels for Efficient Low-Batch Inference*. [arXiv:2505.22758](https://arxiv.org/abs/2505.22758).
+- **[11]** LMSYS. *NVIDIA DGX Spark review*. [lmsys.org](https://lmsys.org)
+- **[12]** GeneralCompute. *GeneralCompute vs vLLM: Throughput, Latency, and Cost Benchmarks* (2026). [generalcompute.com](https://www.generalcompute.com/blog/generalcompute-vs-vllm-throughput-latency-and-cost-benchmarks)
+- **[13]** vLLM. *The State of FP8 KV-Cache and Attention Quantization in vLLM* (2026). [vllm-project.github.io](https://vllm-project.github.io/2026/04/22/fp8-kvcache.html)
+
+</div>
+
+### Teoría de colas
+
+<div className="referencias">
+
+- **[14]** *A Queueing-Theoretic Framework for Stability Analysis of LLM Inference with KV Cache Memory Constraints*. [arXiv:2605.04595](https://arxiv.org/abs/2605.04595).
+- **[15]** Trabajos relacionados: [arXiv:2605.04595](https://arxiv.org/abs/2605.04595), [arXiv:2606.15555](https://arxiv.org/abs/2606.15555) y [arXiv:2605.26297](https://arxiv.org/abs/2605.26297).
+
+</div>
+
+### Documentación técnica
+
+<div className="referencias">
+
+- Qwen. *Qwen3.5-27B*. HuggingFace / ModelScope.
+- NVIDIA. *DGX Spark technical specifications*.
+
+</div>
 
 ## Cómo citar
 

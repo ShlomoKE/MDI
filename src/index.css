@@ -9,7 +9,11 @@
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 
-/* KaTeX trae sus propias fuentes; Vite las copia a dist/assets. */
+/* KaTeX se importa aquí, fusionada en el bundle, aunque eso la vuelva
+   render-blocking. Se probó sacarla a una hoja aparte y cargarla después: sale
+   peor. Sus @font-face usan `font-display: block`, así que al llegar tarde el
+   navegador re-maqueta las miles de ecuaciones ya pintadas — medido, el LCP
+   subía de 2.9 s a 3.1 s y el bloqueo del hilo se duplicaba. */
 @import "katex/dist/katex.min.css";
 
 @import "tailwindcss";
@@ -276,4 +280,25 @@
 }
 .documento th:not(:first-child) {
   text-align: right;
+}
+
+/* Listas de referencias: sin viñeta, con sangría francesa, para que el número
+   entre corchetes quede colgando como en una bibliografía impresa. */
+.documento .referencias ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.6rem 0;
+}
+
+.documento .referencias li {
+  padding-left: 2.6rem;
+  text-indent: -2.6rem;
+  margin: 0.5rem 0;
+  font-size: 0.925rem;
+  line-height: 1.6;
+}
+
+.documento .referencias a {
+  color: var(--color-comp);
+  overflow-wrap: anywhere;
 }

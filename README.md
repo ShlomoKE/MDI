@@ -116,15 +116,36 @@ tienen por qué vivir en un sitio estático.
 
 | | Rendimiento | Accesibilidad | Buenas prácticas | SEO |
 | --- | --- | --- | --- | --- |
-| Móvil | 91–96 | 100 | 100 | 100 |
+| Móvil | 93 | 100 | 100 | 100 |
 | Escritorio | 99 | 100 | 100 | 100 |
 
-Tres cosas sostienen ese rendimiento y conviene no deshacerlas sin medir:
-`content-visibility` sobre los bloques del documento (son 14 000 px de alto y
-más de tres mil elementos de KaTeX), el plugin `plugins/rehype-katex-compacto.mjs`
-—que colapsa cada ecuación en un solo nodo con `dangerouslySetInnerHTML` en vez
-de dejar que React construya cien elementos por fórmula— y el montaje diferido
-de la calculadora en `SeccionCalculadora.tsx`.
+Cinco cosas sostienen ese rendimiento y conviene no deshacerlas sin volver a
+medir. Todas salieron de medir, no de suponer:
+
+1. **`content-visibility`** sobre los bloques del documento. Son 14 000 px de
+   alto y más de tres mil elementos de KaTeX; sin esto el navegador recalcula
+   estilo y layout de todo el artículo cada vez que llega una fuente. Medido:
+   1 026 ms de *style & layout* con la regla, 2 100–3 300 ms sin ella.
+2. **`plugins/rehype-katex-compacto.mjs`**, que colapsa cada ecuación en un solo
+   nodo con `dangerouslySetInnerHTML` en vez de dejar que React construya cien
+   elementos por fórmula.
+3. **El prerenderizado** (`src/entry-server.tsx` + `scripts/prerender.mjs`): el
+   HTML llega listo para pintar y el navegador hidrata encima. Bajó el bloqueo
+   del hilo principal de 310 ms a menos de 100.
+4. **La precarga de las cuatro fuentes del encabezado**, que inyecta el propio
+   script de prerenderizado. El navegador no las descubre hasta parsear el CSS
+   —HTML, CSS, fuente: tres viajes en serie—, y eso partía el primer pintado en
+   dos: 1.7 s cuando llegaban a tiempo, 2.6 s cuando no.
+5. **`modulePreload: false`**: con la página ya prerenderizada el JavaScript no
+   hace falta para pintar, así que precargarlo solo le quitaba ancho de banda al
+   CSS, que sí bloquea.
+
+Dos cosas que se probaron y **empeoraron**, para que nadie las reintente a
+ciegas: sacar el CSS de KaTeX a una hoja aparte y cargarla después (sus
+`@font-face` usan `font-display: block`, así que al llegar tarde re-maqueta las
+ecuaciones ya pintadas: LCP de 2.9 s a 3.1 s y el doble de bloqueo), y quitar el
+MathML de la salida de KaTeX, que ahorraría casi mil elementos a cambio de dejar
+las ecuaciones inaccesibles para los lectores de pantalla.
 
 Stack: Vite + React + TypeScript + Tailwind CSS. Las gráficas son SVG dibujado a
 mano —ninguna librería de charts—. Las ecuaciones del documento las resuelve
