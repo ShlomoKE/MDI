@@ -101,9 +101,10 @@ $$
 \text{FLOP por paso} \;=\; 2 \cdot N \cdot 10^{9} \cdot B
 $$
 
-donde **$N$ está en miles de millones de parámetros**, la convención del código
-y de los catálogos: por eso el factor $10^{9}$ aparece explícito en todo lo que
-toca cómputo.
+donde **$N$ está en miles de millones de parámetros** — la convención del código
+y de los catálogos, donde el Qwen3.5-27B es `N = 27`, no `N = 27000000000`. Por
+eso el factor $10^{9}$ aparece explícito en **todas** las ecuaciones de cómputo
+de aquí en adelante: sin él no son dimensionalmente correctas.
 
 Dividiendo cada uno por el recurso que lo consume:
 
@@ -370,6 +371,12 @@ Y cómputo con memoria:
 $$
 C_{\text{eq}3} \;=\; \frac{\left(V_t - P_m - O\right) \cdot 2 N \cdot 10^{9}}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
 $$
+
+El $10^{9}$ es el mismo de siempre: $N$ está en miles de millones de parámetros,
+así que cada vez que se convierten parámetros en FLOP hay que deshacer esa
+escala. Sin él los cruces salen del orden de una millonésima de token en vez de
+los ~1 300 que da la calculadora, que es una buena forma de comprobar que está
+bien puesto.
 
 El cruce entre memoria y latencia es directo, porque ambos techos acotan bytes:
 manda memoria cuando $V_t - P_m - O \le \mathrm{SLO} \cdot W - P_m$, es decir
