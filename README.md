@@ -89,7 +89,15 @@ node scripts/e2e.mjs                          # 13 comprobaciones en Chrome
 npm i -D --no-save lighthouse chrome-launcher
 node scripts/lighthouse.mjs http://localhost:4173/ mobile
 node scripts/lighthouse.mjs http://localhost:4173/ desktop
+
+node scripts/comparar.mjs                     # el criterio de aceptación
 ```
+
+`scripts/comparar.mjs` es el criterio de aceptación automatizado: corre
+`python motor.py`, lee la tabla que pinta el sitio en un Chrome real y compara
+las dos celda por celda, incluidos los mensajes de las GPUs inviables. Las
+pruebas ya verifican la paridad del motor con igualdad exacta; esto verifica el
+último tramo, el que va del motor a los píxeles.
 
 Esas dependencias están deliberadamente fuera de `package.json`: arrastran el
 árbol entero de puppeteer y con él una veintena de avisos de seguridad que no
