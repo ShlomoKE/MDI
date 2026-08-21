@@ -123,43 +123,55 @@ mano —ninguna librería de charts—. Las ecuaciones del documento las resuelv
 mostrarse; KaTeX solo se descarga si la calculadora tiene que renderizar una
 fórmula en vivo.
 
-## Despliegue en Cloudflare Pages
+## Despliegue en Cloudflare
 
-El repositorio está pensado para la integración de Git de Cloudflare Pages:
-cada push a `main` dispara un despliegue automático.
+El sitio se publica con **Workers Static Assets**: cada push a `main` dispara un
+despliegue automático. No hay código de Worker, solo los archivos que
+`npm run build` deja en `dist/`.
 
 **Configuración del proyecto en el panel de Cloudflare:**
 
 | Campo | Valor |
 | --- | --- |
-| Framework preset | Vite |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` |
 | Node version | 22 — ya fijada por `.node-version` y por `engines` en package.json |
 
 Los pasos, una sola vez:
 
-1. En el panel de Cloudflare → **Workers & Pages** → **Create** → **Pages** →
-   **Connect to Git**.
-2. Autoriza la cuenta de GitHub y elige este repositorio.
-3. Rellena la tabla de arriba y despliega.
+1. Panel de Cloudflare → **Workers & Pages** → **Create** → **Import a repository**.
+2. Autoriza GitHub y elige este repositorio.
+3. Deja el build command y despliega.
 
-> **Si el repositorio no aparece en la lista de Cloudflare**, casi siempre es una
-> de dos cosas. La primera: la app de GitHub de *Cloudflare Pages* se instala con
-> acceso a *repositorios seleccionados*, y un repo privado recién creado no entra
-> solo — se arregla en <https://github.com/settings/installations> → *Cloudflare
-> Pages* → *Repository access* → **All repositories**, o añadiendo este repo a la
-> lista. La segunda: tener varias cuentas de GitHub y estar mirando la que no es;
-> el desplegable de cuenta en Cloudflare tiene que ser la dueña del repositorio.
+> **Si el repositorio no aparece en la lista**, casi siempre es una de dos cosas.
+> La primera: la app de GitHub de Cloudflare se instala con acceso a
+> *repositorios seleccionados*, y un repo privado recién creado no entra solo —
+> se arregla en <https://github.com/settings/installations> → la app de
+> Cloudflare → *Repository access* → **All repositories**, o añadiendo este repo
+> a la lista. La segunda: tener varias cuentas de GitHub y estar mirando la que
+> no es; el desplegable de cuenta en Cloudflare tiene que ser la dueña del repo.
 
-Desde ahí, cada push a `main` publica solo; las ramas y los pull requests
-generan despliegues de vista previa con su propia URL.
+`public/_headers` acaba en `dist/_headers`, y Static Assets lo interpreta: de ahí
+salen el cacheado de los assets con hash, las cabeceras de seguridad y una CSP
+que le prohíbe a la página hablar con el exterior —cosa que no necesita hacer,
+porque calcula todo localmente—. Ese archivo no se publica como asset, solo se
+lee. Ojo con una línea suya: `font-src` necesita `data:` porque Vite incrusta una
+de las fuentes de KaTeX como data: URI, y sin eso las ecuaciones con paréntesis
+grandes se quedan en blanco **solo en producción** (`vite preview` no aplica
+`_headers`).
 
-`wrangler.toml` está en el repositorio para que `npx wrangler pages deploy`
-también funcione desde la terminal si alguna vez hace falta publicar sin pasar
-por Git. `public/_headers` fija el cacheado de los assets con hash, las
-cabeceras de seguridad y una CSP que le prohíbe a la página hablar con el
-exterior —cosa que no necesita hacer, porque calcula todo localmente—.
+### Si prefieres Cloudflare Pages
+
+Funciona igual, pero es otro tipo de proyecto y otro `wrangler.toml`. Sustituye
+el bloque `[assets]` por:
+
+```toml
+pages_build_output_dir = "dist"
+```
+
+y crea el proyecto desde **Workers & Pages** → **Create** → **Pages** →
+**Connect to Git**, con build `npm run build` y directorio de salida `dist`.
+Cloudflare Pages no ejecuta un deploy command: publica `dist` directamente.
 
 ## Lo que el modelo no contempla
 

@@ -1,9 +1,26 @@
-# Cloudflare Pages — sitio estático, sin Workers ni bindings.
+# Cloudflare Workers con Static Assets — sitio estático, sin código de Worker.
 #
-# Con la integración de Git, Cloudflare toma el comando de build y el directorio
-# de salida de la configuración del proyecto en el panel; este archivo existe
-# para que `wrangler pages deploy` funcione igual desde la terminal y para dejar
-# la configuración escrita en el repositorio.
+# El proyecto se creó desde el asistente de Workers, así que Cloudflare ejecuta
+# `npx wrangler deploy` después del build. Ese comando necesita esta forma de
+# configuración: con `pages_build_output_dir` —la clave de Pages— falla con
+# "Missing entry-point to Worker script or to assets directory".
+#
+# No hay `main`: no existe código de Worker que ejecutar. Todo lo que se sirve
+# son los archivos que `npm run build` deja en dist/, y todo el cálculo del
+# sitio ocurre en el navegador.
+#
+# `dist/_headers` (que sale de public/_headers) sí lo respeta Static Assets: de
+# ahí salen la CSP, el cacheado de los assets con hash y las cabeceras de
+# seguridad. El propio archivo no se publica, solo se interpreta.
+#
+# Para volver a Cloudflare Pages: borra el bloque [assets] y sustitúyelo por
+# `pages_build_output_dir = "dist"`.
+
 name = "mdi"
 compatibility_date = "2026-08-21"
-pages_build_output_dir = "dist"
+
+[assets]
+directory = "./dist"
+
+# Sin `not_found_handling`: el sitio es una sola ruta, así que una URL que no
+# existe debe devolver 404 de verdad y no repintar la aplicación entera.
