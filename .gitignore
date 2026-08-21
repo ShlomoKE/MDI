@@ -21,3 +21,5 @@ prompt.txt
 # borradores: informes de Lighthouse, scripts de medición, pruebas de un solo uso
 /_*
 src/_*.test.*
+informe-lighthouse-*.json
+dist-ssr/
