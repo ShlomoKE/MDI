@@ -2,6 +2,15 @@
 
 Para cargas mixtas de usuarios y agentes.
 
+**Una propuesta de Shlomo Kalach**, 2026. El modelo, la derivación de las
+ecuaciones y el criterio de las tres restricciones son suyos. Si lo usas para
+algo publicable, hay formatos de cita listos en la sección *Cómo citar* del
+propio sitio, y `CITATION.cff` hace que GitHub muestre el botón **Cite this
+repository**:
+
+> Kalach, S. (2026). *MDI — Modelo de Dimensionamiento de Infraestructura de
+> Inferencia para cargas mixtas de usuarios y agentes*.
+
 Sitio de una sola página que combina un documento técnico y una calculadora
 interactiva: dadas una carga (usuarios, agentes, contexto, SLO) y un catálogo de
 GPUs, calcula cuánto hardware hace falta —o para cuánta carga alcanza el que ya

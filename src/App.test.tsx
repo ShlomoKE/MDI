@@ -89,6 +89,37 @@ describe("la página monta sin errores", () => {
     }
   });
 
+  it("la autoría aparece arriba, en el pie y en la sección de cita", () => {
+    montar();
+    const encabezado = contenedor.querySelector("header")?.textContent ?? "";
+    expect(encabezado).toContain("Propuesta por");
+    expect(encabezado).toContain("Shlomo Kalach");
+
+    const pie = contenedor.querySelector("footer")?.textContent ?? "";
+    expect(pie).toContain("Shlomo Kalach");
+
+    const texto = contenedor.textContent ?? "";
+    expect(texto).toContain("Kalach, S. (2026)");
+    expect(texto).toContain("@misc{kalach2026mdi");
+    expect(texto).toContain("author       = {Kalach, Shlomo}");
+  });
+
+  it("todos los enlaces internos apuntan a un id que existe", () => {
+    montar();
+    // El id de las secciones lo genera rehype-slug a partir del título, así que
+    // renombrar un `##` puede romper un ancla escrita a mano sin que nadie note.
+    const ids = new Set(
+      Array.from(contenedor.querySelectorAll("[id]")).map((e) => e.id),
+    );
+    const anclas = Array.from(contenedor.querySelectorAll('a[href^="#"]'))
+      .map((a) => (a.getAttribute("href") ?? "").slice(1))
+      .filter(Boolean);
+    expect(anclas.length).toBeGreaterThan(10);
+    for (const destino of anclas) {
+      expect(ids, `#${destino} no existe`).toContain(destino);
+    }
+  });
+
   it("la tabla arranca con los números que imprime motor.py", () => {
     montar();
     const texto = contenedor.textContent ?? "";

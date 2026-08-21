@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: >-
+  Si usas MDI —el modelo, las ecuaciones o la calculadora— cítalo así.
+title: >-
+  MDI — Modelo de Dimensionamiento de Infraestructura de Inferencia para cargas
+  mixtas de usuarios y agentes
+abstract: >-
+  Modelo para dimensionar la infraestructura de inferencia de un LLM a partir de
+  tres restricciones simultáneas —memoria, latencia y cómputo—, con tratamiento
+  explícito de cargas mixtas donde humanos y agentes tienen duty cycles y
+  contextos de órdenes de magnitud distintos. Incluye una calculadora que aplica
+  las ecuaciones en el navegador.
+type: software
+authors:
+  - family-names: Kalach
+    given-names: Shlomo
+date-released: "2026-08-21"
+version: "1.0.0"
+license: CC-BY-4.0
+repository-code: "https://github.com/ShlomoKE/MDI"
+keywords:
+  - inferencia
+  - LLM
+  - dimensionamiento
+  - GPU
+  - KV cache
+  - TPOT
