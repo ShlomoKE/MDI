@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 
 import { COLOR } from "../lib/formato";
+import { useDiagramas } from "../i18n/diagramas";
 
 function Marco({
   titulo,
@@ -76,6 +77,7 @@ const Etiqueta = ({
 // --------------------------------------------------------------------------- //
 
 export function DiagramaCiclo() {
+  const d = useDiagramas();
   const y0 = 46;
   const h = 34;
   const x0 = 24;
@@ -83,37 +85,33 @@ export function DiagramaCiclo() {
   const anchoCache = 190;
 
   return (
-    <Marco
-      alto={210}
-      titulo="El tiempo de un token es el máximo entre mover bytes y multiplicar"
-      pie="Generar un token exige leer todos los pesos y, además, el caché de cada secuencia del lote. En paralelo la GPU multiplica. Lo que tarda el paso es el mayor de los dos caminos, no la suma: por eso agregar sesiones es casi gratis hasta que uno de los dos se satura."
-    >
+    <Marco alto={210} titulo={d.ciclo.titulo} pie={d.ciclo.pie}>
       <Etiqueta x={x0} y={26} tam={12} peso={600} color={COLOR.tinta}>
-        Un paso de decodificación
+        {d.ciclo.encabezado}
       </Etiqueta>
 
       {/* camino de memoria */}
       <rect x={x0} y={y0} width={anchoPesos} height={h} fill={COLOR.tinta} rx="3" />
       <Etiqueta x={x0 + anchoPesos / 2} y={y0 + 22} ancla="middle" color={COLOR.superficie} tam={11.5}>
-        leer los pesos · Pₘ / W
+        {d.ciclo.leerPesos}
       </Etiqueta>
 
       <rect x={x0 + anchoPesos} y={y0} width={anchoCache} height={h} fill={COLOR.memoria} rx="3" />
       <Etiqueta x={x0 + anchoPesos + anchoCache / 2} y={y0 + 22} ancla="middle" color={COLOR.superficie} tam={11.5}>
-        leer el caché · B·C·KVₜ / W
+        {d.ciclo.leerCache}
       </Etiqueta>
 
       <Etiqueta x={x0} y={y0 - 8} color={COLOR.memoria} peso={600} tam={11}>
-        camino de memoria
+        {d.ciclo.caminoMemoria}
       </Etiqueta>
 
       {/* camino de cómputo */}
       <rect x={x0} y={y0 + 62} width={310} height={h} fill={COLOR.computo} rx="3" />
       <Etiqueta x={x0 + 155} y={y0 + 84} ancla="middle" color={COLOR.superficie} tam={11.5}>
-        multiplicar · 2·N·10⁹·B / F
+        {d.ciclo.multiplicar}
       </Etiqueta>
       <Etiqueta x={x0} y={y0 + 54} color={COLOR.computo} peso={600} tam={11}>
-        camino de cómputo
+        {d.ciclo.caminoComputo}
       </Etiqueta>
 
       {/* llave del máximo */}
@@ -127,16 +125,16 @@ export function DiagramaCiclo() {
         strokeDasharray="4 3"
       />
       <Etiqueta x={x0 + anchoPesos + anchoCache + 8} y={y0 + 52} color={COLOR.latencia} peso={600} tam={11}>
-        TPOT
+        {d.ciclo.tpot}
       </Etiqueta>
       <Etiqueta x={x0 + anchoPesos + anchoCache + 8} y={y0 + 68} color={COLOR.suave} tam={10} mono>
-        = max(memoria, cómputo)
+        {d.ciclo.tpotMax}
       </Etiqueta>
 
       {/* el SLO */}
       <line x1={x0} x2={616} y1={186} y2={186} stroke={COLOR.linea} strokeWidth="1" />
       <Etiqueta x={x0} y={180} color={COLOR.suave} tam={10}>
-        el SLO es una cota sobre este máximo: TPOT ≤ SLO
+        {d.ciclo.cotaSlo}
       </Etiqueta>
     </Marco>
   );
@@ -147,6 +145,7 @@ export function DiagramaCiclo() {
 // --------------------------------------------------------------------------- //
 
 export function DiagramaTechos() {
+  const d = useDiagramas();
   const x0 = 130;
   const ancho = 470;
   const h = 30;
@@ -180,49 +179,45 @@ export function DiagramaTechos() {
   };
 
   return (
-    <Marco
-      alto={230}
-      titulo="Las tres restricciones acotan cosas distintas"
-      pie="Memoria y latencia acotan bytes de caché; cómputo acota secuencias en el lote. Las tres se evalúan por GPU y la que deja menos espacio es la que fija el total. Cambiar de hardware casi nunca mueve las tres a la vez: más VRAM sube el primer techo pero no el segundo."
-    >
+    <Marco alto={230} titulo={d.techos.titulo} pie={d.techos.pie}>
       <Etiqueta x={20} y={44} tam={11} peso={600} color={COLOR.memoria}>
-        memoria
+        {d.techos.memoria}
       </Etiqueta>
       <Etiqueta x={20} y={58} tam={10} color={COLOR.suave}>
-        Vₜ − Pₘ − O
+        {d.techos.memoriaFormula}
       </Etiqueta>
       {barra(30, [
-        { frac: 0.32, color: COLOR.tinta, texto: "pesos Pₘ" },
-        { frac: 0.09, color: COLOR.suave, texto: "O" },
-        { frac: 0.59, color: COLOR.memoria, texto: "caché que cabe" },
+        { frac: 0.32, color: COLOR.tinta, texto: d.techos.pesos },
+        { frac: 0.09, color: COLOR.suave, texto: d.techos.overhead },
+        { frac: 0.59, color: COLOR.memoria, texto: d.techos.cacheCabe },
       ])}
 
       <Etiqueta x={20} y={114} tam={11} peso={600} color={COLOR.latencia}>
-        latencia
+        {d.techos.latencia}
       </Etiqueta>
       <Etiqueta x={20} y={128} tam={10} color={COLOR.suave}>
-        SLO·W − Pₘ
+        {d.techos.latenciaFormula}
       </Etiqueta>
       {barra(100, [
-        { frac: 0.32, color: COLOR.tinta, texto: "pesos Pₘ" },
-        { frac: 0.34, color: COLOR.latencia, texto: "caché en el presupuesto" },
-        { frac: 0.34, color: COLOR.latenciaTenue, texto: "fuera del SLO", claro: true },
+        { frac: 0.32, color: COLOR.tinta, texto: d.techos.pesos },
+        { frac: 0.34, color: COLOR.latencia, texto: d.techos.cachePresupuesto },
+        { frac: 0.34, color: COLOR.latenciaTenue, texto: d.techos.fueraSlo, claro: true },
       ])}
 
       <Etiqueta x={20} y={184} tam={11} peso={600} color={COLOR.computo}>
-        cómputo
+        {d.techos.computo}
       </Etiqueta>
       <Etiqueta x={20} y={198} tam={10} color={COLOR.suave}>
-        SLO·F / 2N·10⁹
+        {d.techos.computoFormula}
       </Etiqueta>
       {barra(170, [
-        { frac: 0.55, color: COLOR.computo, texto: "secuencias en el lote" },
-        { frac: 0.45, color: COLOR.computoTenue, texto: "Tensor Cores saturados", claro: true },
+        { frac: 0.55, color: COLOR.computo, texto: d.techos.secuenciasLote },
+        { frac: 0.45, color: COLOR.computoTenue, texto: d.techos.tensorSaturados, claro: true },
       ])}
 
       <line x1={x0} x2={x0} y1={22} y2={210} stroke={COLOR.linea} strokeWidth="1" />
       <Etiqueta x={x0 + ancho} y={222} ancla="end" tam={10} color={COLOR.suave}>
-        cada barra es una GPU
+        {d.techos.cadaBarra}
       </Etiqueta>
     </Marco>
   );
@@ -233,6 +228,7 @@ export function DiagramaTechos() {
 // --------------------------------------------------------------------------- //
 
 export function DiagramaRegimenes() {
+  const d = useDiagramas();
   const x0 = 60;
   const x1 = 600;
   const y = 96;
@@ -242,16 +238,12 @@ export function DiagramaRegimenes() {
   const corte = x0 + (x1 - x0) * 0.42;
 
   return (
-    <Marco
-      alto={212}
-      titulo="El cuello de botella se mueve con el contexto"
-      pie="Con contextos cortos el caché es despreciable y manda el cómputo: la GPU multiplica todo el día. Al alargar el contexto el caché domina el tráfico y el cuello pasa al techo de bytes más estrecho. Cuál de los dos es —memoria o latencia— no depende del contexto sino del hardware frente al SLO, así que los regímenes son dos, no tres: el salto ocurre en el menor de los dos cruces y el otro queda por detrás sin cambiar nada."
-    >
+    <Marco alto={212} titulo={d.regimenes.titulo} pie={d.regimenes.pie}>
       <Etiqueta x={x0} y={40} tam={12} peso={600} color={COLOR.tinta}>
-        ¿Qué restricción manda?
+        {d.regimenes.pregunta}
       </Etiqueta>
       <Etiqueta x={x0} y={58} tam={10.5} color={COLOR.suave}>
-        contexto promedio por sesión, escala logarítmica
+        {d.regimenes.escala}
       </Etiqueta>
 
       <rect x={x0} y={y} width={corte - x0} height={h} fill={COLOR.computoTenue} rx="2" />
@@ -266,29 +258,29 @@ export function DiagramaRegimenes() {
       <rect x={corte} y={y} width={x1 - corte} height={h} fill="url(#mdi-bytes)" rx="2" />
 
       <Etiqueta x={(x0 + corte) / 2} y={y + 26} ancla="middle" color={COLOR.computo} peso={600} tam={12}>
-        cómputo
+        {d.regimenes.computo}
       </Etiqueta>
       <Etiqueta x={(corte + x1) / 2} y={y + 21} ancla="middle" color={COLOR.latencia} peso={600} tam={12}>
-        latencia o memoria
+        {d.regimenes.latenciaOMemoria}
       </Etiqueta>
       <Etiqueta x={(corte + x1) / 2} y={y + 35} ancla="middle" color={COLOR.suave} tam={10}>
-        el techo de bytes más estrecho
+        {d.regimenes.techoEstrecho}
       </Etiqueta>
 
       <line x1={corte} x2={corte} y1={y - 12} y2={y + h + 12} stroke={COLOR.tinta} strokeWidth="1.5" />
       <Etiqueta x={corte} y={y - 18} ancla="middle" color={COLOR.tinta} peso={600} tam={11} mono>
-        min(Ceq₁, Ceq₃)
+        {d.regimenes.corte}
       </Etiqueta>
 
       <line x1={x0} x2={x1} y1={y + h + 22} y2={y + h + 22} stroke={COLOR.linea} strokeWidth="1" />
       <Etiqueta x={x0} y={y + h + 38} tam={10} color={COLOR.suave} mono>
-        512 tok
+        {d.regimenes.ejeMin}
       </Etiqueta>
       <Etiqueta x={x1} y={y + h + 38} ancla="end" tam={10} color={COLOR.suave} mono>
-        200 000 tok
+        {d.regimenes.ejeMax}
       </Etiqueta>
       <Etiqueta x={(x0 + x1) / 2} y={y + h + 38} ancla="middle" tam={10} color={COLOR.suave}>
-        contexto C
+        {d.regimenes.ejeContexto}
       </Etiqueta>
     </Marco>
   );
@@ -299,6 +291,7 @@ export function DiagramaRegimenes() {
 // --------------------------------------------------------------------------- //
 
 export function DiagramaLote() {
+  const d = useDiagramas();
   const filas = [1, 2, 3, 4];
   const x0 = 40;
   const wPesos = 240;
@@ -307,18 +300,14 @@ export function DiagramaLote() {
   const gap = 9;
 
   return (
-    <Marco
-      alto={228}
-      titulo="El lote amortiza la lectura de los pesos"
-      pie="Los pesos se leen una sola vez por paso y sirven para todas las secuencias del lote; el caché, en cambio, se paga por secuencia. De ahí sale toda la economía de la inferencia: la primera sesión cuesta carísima y las siguientes casi nada, hasta que la suma de cachés alcanza a los pesos y el sistema entra en el régimen de memoria."
-    >
+    <Marco alto={228} titulo={d.lote.titulo} pie={d.lote.pie}>
       <Etiqueta x={x0} y={26} tam={12} peso={600} color={COLOR.tinta}>
-        Un lote de 4 secuencias, un solo paso
+        {d.lote.encabezado}
       </Etiqueta>
 
       <rect x={x0} y={44} width={wPesos} height={filas.length * (h + gap) - gap} fill={COLOR.tinta} rx="3" />
       <Etiqueta x={x0 + wPesos / 2} y={44 + (filas.length * (h + gap) - gap) / 2 + 4} ancla="middle" color={COLOR.superficie} tam={11.5}>
-        pesos Pₘ — se leen una vez
+        {d.lote.pesosUnaVez}
       </Etiqueta>
 
       {filas.map((i) => {
@@ -327,7 +316,7 @@ export function DiagramaLote() {
           <g key={i}>
             <rect x={x0 + wPesos + 6} y={y} width={wCache} height={h} fill={COLOR.memoria} rx="2" />
             <Etiqueta x={x0 + wPesos + 6 + wCache + 8} y={y + 15} tam={10.5} color={COLOR.suave}>
-              caché de la sesión {i} · C·KVₜ
+              {d.lote.cacheSesion(i)}
             </Etiqueta>
           </g>
         );
@@ -336,13 +325,13 @@ export function DiagramaLote() {
       <line x1={x0} x2={x0} y1={38} y2={44 + filas.length * (h + gap) - gap + 6} stroke={COLOR.linea} />
 
       <Etiqueta x={x0} y={182} tam={11} color={COLOR.tinta}>
-        Bytes por paso = Pₘ + B·C·KVₜ
+        {d.lote.bytesPaso}
       </Etiqueta>
       <Etiqueta x={x0} y={200} tam={11} color={COLOR.suave}>
-        Bytes por token útil = Pₘ/B + C·KVₜ  →  el término de los pesos se diluye con B
+        {d.lote.bytesToken}
       </Etiqueta>
       <Etiqueta x={x0} y={218} tam={10.5} color={COLOR.latencia}>
-        pero B no puede crecer sin límite: lo acotan la VRAM, el SLO y los Tensor Cores
+        {d.lote.limiteB}
       </Etiqueta>
     </Marco>
   );

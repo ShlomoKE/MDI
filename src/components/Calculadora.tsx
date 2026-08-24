@@ -17,14 +17,11 @@ import TablaGPUs from "./TablaGPUs";
 import { Boton, Campo, Fijo, Kpi, Seccion } from "./Campos";
 import { DUTY_AGENTE, DUTY_HUMANO, type GPUCatalogo, type ModeloCatalogo } from "../lib/catalogos";
 import { descargarCSV, nombreConFecha, type Celda } from "../lib/csv";
-import { CLASE_CUELLO, colorCuello, enGB, enKB, fmt, fmtCorto, nombreCuello, usd } from "../lib/formato";
+import { CLASE_CUELLO, colorCuello, enGB, enKB, fmt, fmtCorto, usd } from "../lib/formato";
 import { calcular } from "../lib/resultados";
 import { ESTADO_INICIAL, enlace, leer, serializar, type Estado, type Modo } from "../lib/urlEstado";
-
-const MODOS: Array<[Modo, string]> = [
-  ["dimensionar", "¿Cuánto hardware?"],
-  ["capacidad", "¿Para cuánto alcanza?"],
-];
+import { useTextos } from "../i18n/contexto";
+import { nombreCuello } from "../i18n/cuello";
 
 /** Las tres restricciones en LaTeX, para mostrar la que está mandando. */
 const ECUACIONES = {
@@ -34,6 +31,7 @@ const ECUACIONES = {
 } as const;
 
 export function Calculadora() {
+  const t = useTextos();
   const [estado, setEstado] = useState<Estado>(() =>
     typeof window === "undefined" ? ESTADO_INICIAL : leer(window.location.search),
   );
@@ -48,17 +46,24 @@ export function Calculadora() {
   // El estado se refleja en la URL sin ensuciar el historial: replaceState, no
   // pushState, para que el botón de atrás siga saliendo de la página.
   useEffect(() => {
-    const t = setTimeout(() => {
+    const temporizador = setTimeout(() => {
       const q = serializar(estado);
       const url = window.location.pathname + (q ? "?" + q : "") + window.location.hash;
       window.history.replaceState(null, "", url);
     }, 250);
-    return () => clearTimeout(t);
+    return () => clearTimeout(temporizador);
   }, [estado]);
 
   const r = useMemo(() => calcular(estado), [estado]);
   const dim = estado.modo === "dimensionar";
   const modelo = r.modelo;
+
+  // Los rótulos de los dos modos salen del diccionario, así que el arreglo se
+  // arma aquí dentro y no como constante de módulo.
+  const modos: Array<[Modo, string]> = [
+    ["dimensionar", t.calculadora.modoDim],
+    ["capacidad", t.calculadora.modoCap],
+  ];
 
   // El foco puede caer en una GPU excluida de la comparación: sigue teniendo
   // fila en la tabla y su detalle es igual de válido.
@@ -106,20 +111,18 @@ export function Calculadora() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="font-cond font-bold text-2xl sm:text-[26px] tracking-tight">
-              Calculadora MDI
+              {t.calculadora.titulo}
             </h2>
             <p className="text-sm mt-1 text-suave max-w-prose">
-              {dim
-                ? "Define la carga: la calculadora devuelve el mínimo de GPUs que cumple memoria, latencia y cómputo."
-                : "Fija el hardware: la calculadora escala la mezcla de carga hasta donde alcance."}
+              {dim ? t.calculadora.entradillaDim : t.calculadora.entradillaCap}
             </p>
           </div>
           <div
             className="flex rounded border border-linea overflow-hidden shrink-0"
             role="group"
-            aria-label="Modo de cálculo"
+            aria-label={t.calculadora.modoAria}
           >
-            {MODOS.map(([k, l]) => (
+            {modos.map(([k, l]) => (
               <button
                 key={k}
                 type="button"
@@ -143,46 +146,44 @@ export function Calculadora() {
         {/* ------------------------------ Parámetros ------------------------------ */}
         <div className="p-4 sm:p-6 lg:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-linea bg-superficie">
           {!dim && (
-            <Seccion titulo="Hardware disponible">
-              <Campo label="GPUs por configuración" valor={estado.G} set={(v) => set({ G: Math.max(1, Math.round(v)) })} paso={1} min={1} />
+            <Seccion titulo={t.calculadora.secHardware}>
+              <Campo label={t.calculadora.gpusPorConfig} valor={estado.G} set={(v) => set({ G: Math.max(1, Math.round(v)) })} paso={1} min={1} />
               <p className="text-xs mt-2 leading-relaxed text-suave">
-                Se evalúa cada GPU del catálogo como si tuvieras {estado.G} unidades de ese tipo.
+                {t.calculadora.notaGpusPorConfig(String(estado.G))}
               </p>
             </Seccion>
           )}
 
-          <Seccion titulo="Usuarios">
+          <Seccion titulo={t.calculadora.secUsuarios}>
             {dim ? (
-              <Campo label="Usuarios" valor={estado.Uh} set={(v) => set({ Uh: v })} paso={100} />
+              <Campo label={t.calculadora.usuarios} valor={estado.Uh} set={(v) => set({ Uh: v })} paso={100} />
             ) : (
-              <Fijo label="Usuarios" valor="calculado" />
+              <Fijo label={t.calculadora.usuarios} valor={t.calculadora.calculado} />
             )}
-            <Fijo label="Duty cycle" valor={DUTY_HUMANO} nota="peor caso" />
-            <Campo label="Contexto" valor={estado.Ch} set={(v) => set({ Ch: v })} paso={500} sufijo="tok" />
+            <Fijo label={t.calculadora.dutyCycle} valor={DUTY_HUMANO} nota={t.calculadora.peorCaso} />
+            <Campo label={t.calculadora.contexto} valor={estado.Ch} set={(v) => set({ Ch: v })} paso={500} sufijo={t.calculadora.tok} />
           </Seccion>
 
-          <Seccion titulo="Agentes">
-            <Campo label="Agentes" valor={estado.Ua} set={(v) => set({ Ua: v })} paso={5} />
-            <Fijo label="Duty cycle" valor={DUTY_AGENTE} nota="peor caso" />
-            <Campo label="Contexto" valor={estado.Ca} set={(v) => set({ Ca: v })} paso={5000} sufijo="tok" />
+          <Seccion titulo={t.calculadora.secAgentes}>
+            <Campo label={t.calculadora.agentes} valor={estado.Ua} set={(v) => set({ Ua: v })} paso={5} />
+            <Fijo label={t.calculadora.dutyCycle} valor={DUTY_AGENTE} nota={t.calculadora.peorCaso} />
+            <Campo label={t.calculadora.contexto} valor={estado.Ca} set={(v) => set({ Ca: v })} paso={5000} sufijo={t.calculadora.tok} />
             <p className="text-xs mt-2 leading-relaxed text-suave">
-              {dim
-                ? "Duty cycles fijos en el peor caso. Trazas reales de agentes de código dan ~0.42 (13 s de generación por 18 s de herramientas); 0.95 corresponde a herramientas rápidas."
-                : "Fijas cuántos agentes quieres; la calculadora devuelve cuántos usuarios caben además de ellos."}
+              {dim ? t.calculadora.notaAgentesDim : t.calculadora.notaAgentesCap}
             </p>
           </Seccion>
 
-          <Seccion titulo="Objetivo">
-            <Campo label="SLO por token" valor={estado.slo_ms} set={(v) => set({ slo_ms: Math.max(0.1, v) })} paso={5} min={0.1} sufijo="ms" />
+          <Seccion titulo={t.calculadora.secObjetivo}>
+            <Campo label={t.calculadora.sloPorToken} valor={estado.slo_ms} set={(v) => set({ slo_ms: Math.max(0.1, v) })} paso={5} min={0.1} sufijo="ms" />
             <p className="text-xs mt-2 text-suave">
-              {fmt(1000 / estado.slo_ms)} tokens/s por sesión
+              {t.calculadora.notaSlo(fmt(1000 / estado.slo_ms))}
             </p>
           </Seccion>
 
-          <Seccion titulo="Modelo">
+          <Seccion titulo={t.calculadora.secModelo}>
             <select
               value={estado.modeloId}
-              aria-label="Modelo"
+              aria-label={t.calculadora.modeloAria}
               onChange={(e) => set({ modeloId: e.target.value })}
               className="campo w-full text-sm px-2 py-1.5 mb-2"
             >
@@ -192,15 +193,15 @@ export function Calculadora() {
                 </option>
               ))}
             </select>
-            <Campo label="N parámetros" valor={modelo.N} set={(v) => editarModeloActivo({ N: v })} sufijo="B" />
-            <Campo label="Lₐ capas atn." valor={modelo.capas_atn} set={(v) => editarModeloActivo({ capas_atn: v })} ayuda="Capas que generan KV cache, no las totales" />
-            <Campo label="H cabezas KV" valor={modelo.kv_heads} set={(v) => editarModeloActivo({ kv_heads: v })} />
-            <Campo label="dₖ dimensión" valor={modelo.head_dim} set={(v) => editarModeloActivo({ head_dim: v })} paso={32} />
+            <Campo label={t.calculadora.nParametros} valor={modelo.N} set={(v) => editarModeloActivo({ N: v })} sufijo="B" />
+            <Campo label={t.calculadora.capasAtn} valor={modelo.capas_atn} set={(v) => editarModeloActivo({ capas_atn: v })} ayuda={t.calculadora.ayudaCapasAtn} />
+            <Campo label={t.calculadora.cabezasKV} valor={modelo.kv_heads} set={(v) => editarModeloActivo({ kv_heads: v })} />
+            <Campo label={t.calculadora.dimension} valor={modelo.head_dim} set={(v) => editarModeloActivo({ head_dim: v })} paso={32} />
             <div className="flex gap-2 mt-3">
               {(
                 [
-                  ["Pesos", "quant_pesos"],
-                  ["Caché", "quant_cache"],
+                  [t.calculadora.pesos, "quant_pesos"],
+                  [t.calculadora.cache, "quant_cache"],
                 ] as Array<[string, "quant_pesos" | "quant_cache"]>
               ).map(([lbl, campo]) => (
                 <div key={campo} className="flex-1">
@@ -223,10 +224,10 @@ export function Calculadora() {
               ))}
             </div>
             <div className="mt-3">
-              <Campo label="Overhead motor" valor={estado.overhead_gb} set={(v) => set({ overhead_gb: v })} sufijo="GB" />
+              <Campo label={t.calculadora.overheadMotor} valor={estado.overhead_gb} set={(v) => set({ overhead_gb: v })} sufijo="GB" />
             </div>
             <Campo
-              label="Eficiencia de W"
+              label={t.calculadora.eficiencia}
               valor={estado.eff}
               set={(v) => set({ eff: Math.min(1, Math.max(0.05, v)) })}
               paso={0.05}
@@ -234,18 +235,16 @@ export function Calculadora() {
               max={1}
             />
             <p className="text-xs mt-2 leading-relaxed text-suave">
-              El TPOT teórico sale 20–40 % optimista: el caché compite por el mismo ancho de
-              banda y hay overhead de kernels. 0.5 es lo que respaldan los benchmarks públicos
-              en modelos grandes; ajústalo con tu medición real. También descuenta los FLOPS.
+              {t.calculadora.notaEficiencia}
             </p>
           </Seccion>
 
           <div className="flex flex-wrap gap-2">
-            <Boton onClick={exportar} titulo="Descargar la tabla de resultados">
-              Exportar CSV
+            <Boton onClick={exportar} titulo={t.calculadora.tituloExportar}>
+              {t.calculadora.exportarCSV}
             </Boton>
-            <Boton onClick={copiarEnlace} titulo="Copiar el enlace con esta configuración">
-              {copiado ? "Copiado ✓" : "Copiar enlace"}
+            <Boton onClick={copiarEnlace} titulo={t.calculadora.tituloCopiar}>
+              {copiado ? t.calculadora.copiado : t.calculadora.copiarEnlace}
             </Boton>
           </div>
         </div>
@@ -253,20 +252,20 @@ export function Calculadora() {
         {/* ------------------------------ Resultados ------------------------------ */}
         <div className="flex-1 p-4 sm:p-6 min-w-0">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <Kpi k="Pesos en VRAM" v={`${enGB(r.Pm)} GB`} />
-            <Kpi k="KV por token" v={`${enKB(r.KVt)} KB`} />
+            <Kpi k={t.calculadora.kpiPesos} v={`${enGB(r.Pm)} GB`} />
+            <Kpi k={t.calculadora.kpiKV} v={`${enKB(r.KVt)} KB`} />
             {dim ? (
-              <Kpi k="Sesiones activas" v={fmt(r.activas)} />
+              <Kpi k={t.calculadora.kpiActivas} v={fmt(r.activas)} />
             ) : (
-              <Kpi k="Contexto promedio" v={`${fmt(r.contextoPromedio)} tok`} />
+              <Kpi k={t.calculadora.kpiContextoProm} v={`${fmt(r.contextoPromedio)} ${t.calculadora.tok}`} />
             )}
-            <Kpi k="κ agente/usuario" v={`${fmt(r.kappa)}×`} col="text-lat" />
+            <Kpi k={t.calculadora.kpiKappa} v={`${fmt(r.kappa)}×`} col="text-lat" />
           </div>
 
           <div className="rounded border border-linea bg-superficie mb-6 p-3">
             <div className="flex items-baseline justify-between mb-1 px-1 sm:px-2 flex-wrap gap-2">
               <h3 className="rotulo text-tinta">
-                {dim ? "Costo contra latencia" : `Frontera de capacidad con ${estado.G} GPUs`}
+                {dim ? t.calculadora.graficaDim : t.calculadora.graficaCap(String(estado.G))}
               </h3>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-suave">
                 {(["memoria", "latencia", "computo"] as const).map((k) => (
@@ -276,7 +275,7 @@ export function Calculadora() {
                       className="inline-block w-2 h-2 rounded-full"
                       style={{ background: colorCuello(k) }}
                     />
-                    limita {nombreCuello(k)}
+                    {t.calculadora.limita} {nombreCuello(t, k)}
                   </span>
                 ))}
               </div>
@@ -297,6 +296,7 @@ export function Calculadora() {
           <TablaGPUs
             filas={r.filas}
             modo={estado.modo}
+            modeloNombre={r.modelo.nombre}
             eff={estado.eff}
             slo_ms={estado.slo_ms}
             G={estado.G}
@@ -326,36 +326,36 @@ export function Calculadora() {
                   {(dim ? activo.dim.G : estado.G) > 1 ? "s" : ""}
                 </h3>
                 <span className="text-xs text-suave hidden sm:block">
-                  pasa el cursor sobre otra GPU para comparar
+                  {t.calculadora.comparar}
                 </span>
               </div>
 
               {dim ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Kpi
-                    k="Por sesión activa"
+                    k={t.calculadora.kpiPorSesion}
                     v={`${fmt(activo.dim.tok_s_sesion, 1)} tok/s`}
                     col={activo.dim.cumple_slo ? "text-mem" : "text-lat"}
                   />
-                  <Kpi k="Lote por GPU" v={`${fmt(activo.dim.B, 1)} sesiones`} />
-                  <Kpi k="Consumo usuarios" v={`${fmtCorto(r.activasHumanos * activo.dim.tok_s_sesion)} tok/s`} />
-                  <Kpi k="Consumo agentes" v={`${fmtCorto(r.activasAgentes * activo.dim.tok_s_sesion)} tok/s`} />
+                  <Kpi k={t.calculadora.kpiLote} v={`${fmt(activo.dim.B, 1)} ${t.calculadora.sesiones}`} />
+                  <Kpi k={t.calculadora.kpiConsumoUsuarios} v={`${fmtCorto(r.activasHumanos * activo.dim.tok_s_sesion)} tok/s`} />
+                  <Kpi k={t.calculadora.kpiConsumoAgentes} v={`${fmtCorto(r.activasAgentes * activo.dim.tok_s_sesion)} tok/s`} />
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Kpi k="Agentes fijados" v={fmt(estado.Ua)} col="text-lat" />
+                  <Kpi k={t.calculadora.kpiAgentesFijados} v={fmt(estado.Ua)} col="text-lat" />
                   <Kpi
-                    k="Usuarios que caben"
-                    v={activo.cap.alcanza ? fmt(activo.cap.usuarios) : "no alcanza"}
+                    k={t.calculadora.kpiUsuariosCaben}
+                    v={activo.cap.alcanza ? fmt(activo.cap.usuarios) : t.calculadora.noAlcanza}
                     col={activo.cap.alcanza ? "text-mem" : "text-lat"}
                   />
                   <Kpi
-                    k="Por sesión activa"
+                    k={t.calculadora.kpiPorSesion}
                     v={activo.cap.alcanza ? `${fmt(1000 / activo.cap.tpot_ms, 1)} tok/s` : "—"}
                     col={activo.cap.alcanza && activo.cap.tpot_ms <= estado.slo_ms ? "text-mem" : "text-lat"}
                   />
                   <Kpi
-                    k="Costo por agente"
+                    k={t.calculadora.kpiCostoAgente}
                     v={`${usd(activo.cap.costo_hora / Math.max(1, estado.Ua))}/h`}
                   />
                 </div>
@@ -372,14 +372,14 @@ export function Calculadora() {
                 >
                   <div className="min-w-0">
                     <div className={"rotulo " + CLASE_CUELLO[cuelloActivo].texto}>
-                      Manda {nombreCuello(cuelloActivo)}
+                      {t.calculadora.manda} {nombreCuello(t, cuelloActivo)}
                     </div>
                     <p className="text-xs mt-1 text-tinta/80 leading-relaxed">
                       {cuelloActivo === "memoria"
-                        ? "La VRAM que sobra después de los pesos y del overhead no alcanza para el caché."
+                        ? t.calculadora.porqueMemoria
                         : cuelloActivo === "latencia"
-                          ? "Leer los pesos más el caché en cada paso no cabe dentro del SLO."
-                          : "El lote saturó los Tensor Cores: la multiplicación ya no es gratis."}
+                          ? t.calculadora.porqueLatencia
+                          : t.calculadora.porqueComputo}
                     </p>
                   </div>
                   <div className="sm:ml-auto shrink-0">
@@ -390,7 +390,7 @@ export function Calculadora() {
 
               {dim && (
                 <div className="mt-4 sm:hidden">
-                  <div className="text-xs text-suave mb-1">Presión por restricción</div>
+                  <div className="text-xs text-suave mb-1">{t.calculadora.presionPorRestriccion}</div>
                   <BarrasPresion
                     G_mem={activo.dim.G_mem}
                     G_lat={activo.dim.G_lat}
@@ -403,21 +403,29 @@ export function Calculadora() {
 
               <p className="text-xs mt-3 leading-relaxed text-suave">
                 {dim
-                  ? `Cada sesión del lote recibe un token por ciclo, así que usuarios y agentes generan a la misma velocidad. El ${fmt(r.pctAgentes)} % de las sesiones activas son agentes y se llevan esa misma fracción de la producción.`
-                  : `Con ${estado.G} unidades manda ${nombreCuello(cuelloActivo)}. Cada agente que agregues cuesta ${fmt(r.kappa)} usuarios, así que la curva de la gráfica es el intercambio real entre ambos.`}
+                  ? t.calculadora.cierreDim(fmt(r.pctAgentes))
+                  : t.calculadora.cierreCap(
+                      String(estado.G),
+                      nombreCuello(t, cuelloActivo),
+                      fmt(r.kappa),
+                    )}
               </p>
             </div>
           )}
 
           <p className="text-xs mt-4 leading-relaxed text-suave">
-            {dim
-              ? "Las barras muestran cuántas GPUs exige cada restricción por separado; la que domina define el total."
-              : "Cada curva es una GPU: todos los puntos sobre ella saturan el sistema. No hay un óptimo único, es un intercambio — la pendiente es κ."}{" "}
-            Si manda <span className="text-mem">memoria</span>, conviene más VRAM o recortar
-            contexto; si manda <span className="text-lat">latencia</span>, conviene más ancho de
-            banda; si manda <span className="text-comp">cómputo</span>, el lote saturó los Tensor
-            Cores y solo ayuda un modelo más chico o más GPUs. Los precios por hora son editables
-            y sirven como referencia, no como cotización.
+            {dim ? t.calculadora.cierreBarras : t.calculadora.cierreCurvas}{" "}
+            {/* Un consejo por restricción, con su color. Se generan en bucle en
+                vez de escribir la frase entera porque el orden de la palabra y
+                el resto de la oración cambia con el idioma. */}
+            {(["memoria", "latencia", "computo"] as const).map((k) => (
+              <span key={k}>
+                {t.calculadora.consejoSi}{" "}
+                <span className={CLASE_CUELLO[k].texto}>{nombreCuello(t, k)}</span>
+                {t.calculadora.consejo[k]}{" "}
+              </span>
+            ))}
+            {t.calculadora.consejoPrecios}
           </p>
         </div>
       </div>

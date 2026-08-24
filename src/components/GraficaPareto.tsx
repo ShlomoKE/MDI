@@ -7,6 +7,7 @@
  * Pareto: fuera de esa línea siempre hay una opción mejor en ambos ejes.
  */
 
+import { useTextos } from "../i18n/contexto";
 import { COLOR, colorCuello, fmt, usd } from "../lib/formato";
 import { dibujable, type Fila } from "../lib/resultados";
 
@@ -30,6 +31,7 @@ const PH = H - MT - MB;
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
+  const t = useTextos();
   const ok = filas.filter(dibujable);
 
   const maxX = Math.max(slo_ms * 1.25, ...ok.map((f) => f.dim.tpot_ms), 10);
@@ -39,7 +41,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
   const py = (v: number) => MT + PH - (v / maxY) * PH;
 
   if (!ok.length) {
-    return <VacioSVG texto="Ninguna GPU del catálogo admite esta configuración." />;
+    return <VacioSVG texto={t.graficas.vacioPareto} />;
   }
 
   return (
@@ -48,7 +50,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
       className="w-full h-auto"
       style={{ maxHeight: 380 }}
       role="img"
-      aria-label={`Costo por hora contra TPOT logrado para ${ok.length} GPUs`}
+      aria-label={t.graficas.ariaPareto(ok.length)}
     >
       {/* rejilla horizontal y escala de costo */}
       {TICKS.map((t) => (
@@ -89,7 +91,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
       ))}
 
       <text x={ML + PW / 2} y={H - 6} textAnchor="middle" fontSize="11" fill={COLOR.suave}>
-        TPOT logrado (ms/token)
+        {t.graficas.ejeTPOT}
       </text>
       <text
         x={14}
@@ -99,7 +101,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
         fill={COLOR.suave}
         transform={`rotate(-90 14 ${MT + PH / 2})`}
       >
-        Costo (USD/hora)
+        {t.graficas.ejeCosto}
       </text>
 
       {/* zona que incumple el SLO */}
@@ -127,7 +129,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
         fill={COLOR.latencia}
         className="mono"
       >
-        SLO {fmt(slo_ms, slo_ms % 1 === 0 ? 0 : 1)} ms
+        {t.graficas.slo(fmt(slo_ms, slo_ms % 1 === 0 ? 0 : 1))}
       </text>
 
       {/* frente de Pareto */}
@@ -156,7 +158,12 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            aria-label={`${f.gpu.nombre}: ${f.dim.G} GPUs, ${fmt(f.dim.tpot_ms, 1)} ms, ${usd(f.dim.costo_hora)} por hora`}
+            aria-label={t.graficas.puntoPareto(
+              f.gpu.nombre,
+              String(f.dim.G),
+              fmt(f.dim.tpot_ms, 1),
+              usd(f.dim.costo_hora),
+            )}
             style={{ cursor: "pointer" }}
           >
             {/* área de contacto generosa para el dedo en pantallas táctiles */}
@@ -191,6 +198,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
   );
 }
 
+/** Recibe el texto ya traducido: quien la usa es el que tiene el diccionario. */
 export function VacioSVG({ texto }: { texto: string }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ maxHeight: 380 }}>

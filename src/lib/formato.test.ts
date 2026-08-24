@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { COLOR, fmt, fmtCorto, enGB, enKB, nombreCuello, plural, usd } from "./formato";
+import { COLOR, fmt, fmtCorto, enGB, enKB, plural, usd } from "./formato";
+import { nombreCuello } from "../i18n/cuello";
+import { TEXTOS } from "../i18n/textos";
 
 /**
  * La paleta vive dos veces: como tokens de `@theme` en index.css —de donde
@@ -84,7 +86,8 @@ describe("formato de presentación", () => {
       expect(fmtCorto(v as number)).toBe("—");
     }
     expect(usd(NaN)).toBe("—");
-    expect(nombreCuello(null)).toBe("—");
+    expect(nombreCuello(TEXTOS.es, null)).toBe("—");
+    expect(nombreCuello(TEXTOS.en, null)).toBe("—");
   });
 
   it("las conversiones de unidad salen de SI y solo aquí", () => {

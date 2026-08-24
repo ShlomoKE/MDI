@@ -9,12 +9,12 @@
 
 import { useEffect, useState } from "react";
 
+import { useTextos } from "../i18n/contexto";
+
 export const AUTOR = "Shlomo Kalach";
 export const AUTOR_CORTO = "S. Kalach";
 export const AUTOR_APELLIDO_PRIMERO = "Kalach, S.";
 export const ANIO = 2026;
-export const TITULO =
-  "MDI — Modelo de Dimensionamiento de Infraestructura de Inferencia para cargas mixtas de usuarios y agentes";
 
 /** Fecha en el formato que piden BibTeX y las normas de cita. */
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -28,6 +28,7 @@ function Bloque({
   texto: string;
   mono?: boolean;
 }) {
+  const t = useTextos();
   const [copiado, setCopiado] = useState(false);
 
   const copiar = async () => {
@@ -50,7 +51,7 @@ function Bloque({
           onClick={copiar}
           className="text-xs px-2 py-1 rounded border border-linea bg-superficie text-tinta hover:bg-fondo transition-colors"
         >
-          {copiado ? "Copiado ✓" : "Copiar"}
+          {copiado ? t.cita.copiado : t.cita.copiar}
         </button>
       </div>
       <pre
@@ -70,6 +71,8 @@ const ENLACE_POR_DEFECTO = "https://github.com/ShlomoKE/MDI";
 const FECHA_PUBLICACION = "2026-08-21";
 
 export function Cita() {
+  const t = useTextos();
+
   // El primer render tiene que ser idéntico en el build y en el navegador: la
   // página se prerenderiza, así que leer `window` o la fecha de hoy aquí haría
   // que React encontrara un árbol distinto al hidratar. Ambos se rellenan
@@ -85,12 +88,15 @@ export function Cita() {
   const enlace = vivo?.url ?? ENLACE_POR_DEFECTO;
   const consultado = vivo?.consultado ?? FECHA_PUBLICACION;
 
-  const texto = `${AUTOR_APELLIDO_PRIMERO} (${ANIO}). ${TITULO}. ${enlace} (consultado el ${consultado})`;
+  // El autor y el año son nombres propios y no cambian; el título sí, porque
+  // se cita la versión de la página que el lector tiene delante.
+  const titulo = t.meta.tituloCita;
+
+  const texto = `${AUTOR_APELLIDO_PRIMERO} (${ANIO}). ${titulo}. ${enlace} ${t.cita.consultado(consultado)}`;
 
   const bibtex = `@misc{kalach${ANIO}mdi,
   author       = {Kalach, Shlomo},
-  title        = {{MDI: Modelo de Dimensionamiento de Infraestructura de
-                  Inferencia para cargas mixtas de usuarios y agentes}},
+  title        = {{${titulo}}},
   year         = {${ANIO}},
   howpublished = {\\url{${enlace}}},
   urldate      = {${consultado}}
@@ -98,8 +104,8 @@ export function Cita() {
 
   return (
     <div className="not-prose my-6 flex flex-col gap-3">
-      <Bloque etiqueta="Referencia" texto={texto} />
-      <Bloque etiqueta="BibTeX" texto={bibtex} mono />
+      <Bloque etiqueta={t.cita.referencia} texto={texto} />
+      <Bloque etiqueta={t.cita.bibtex} texto={bibtex} mono />
     </div>
   );
 }

@@ -11,12 +11,17 @@ import EntradaNumerica from "./EntradaNumerica";
 import type { GPUCatalogo } from "../lib/catalogos";
 import type { Fila } from "../lib/resultados";
 import type { Modo } from "../lib/urlEstado";
-import { CLASE_CUELLO, fmt, fmtCorto, nombreCuello, usd } from "../lib/formato";
+import { CLASE_CUELLO, fmt, fmtCorto, usd } from "../lib/formato";
 import type { Cuello } from "../lib/motor";
+import { useTextos } from "../i18n/contexto";
+import { nombreCuello } from "../i18n/cuello";
+import { motivoDe } from "../i18n/motivo";
 
 interface Props {
   filas: Fila[];
   modo: Modo;
+  /** Hace falta para rearmar el motivo de inviabilidad en el idioma vigente. */
+  modeloNombre: string;
   eff: number;
   slo_ms: number;
   G: number;
@@ -26,30 +31,6 @@ interface Props {
   onCambiar: (id: string, cambios: Partial<GPUCatalogo>) => void;
   onEliminar: (id: string) => void;
 }
-
-const COLS_DIM = [
-  "GPU",
-  "VRAM",
-  "GB/s nom → efect",
-  "USD/h",
-  "GPUs",
-  "Presión mem / lat / cpu",
-  "TPOT",
-  "tok/s sesión",
-  "Costo/h",
-];
-
-const COLS_CAP = [
-  "GPU",
-  "VRAM",
-  "GB/s nom → efect",
-  "USD/h",
-  "Usuarios",
-  "Solo agentes",
-  "Cuello",
-  "TPOT",
-  "Costo/h",
-];
 
 /** El cuello vigente en el modo activo, o "" si la GPU no es viable. */
 function cuelloDe(f: Fila, modo: Modo): Cuello | "" {
@@ -70,25 +51,27 @@ function PrecioInput({
   onChange: (v: number) => void;
   id: string;
 }) {
+  const t = useTextos();
   return (
     <EntradaNumerica
       valor={valor}
       set={onChange}
       paso={0.1}
       min={0}
-      etiqueta={`Precio por hora de ${id}`}
+      etiqueta={t.tabla.precioDe(id)}
       className="campo mono w-20 px-1.5 py-0.5 text-right text-sm"
     />
   );
 }
 
 function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => void }) {
+  const t = useTextos();
   return (
     <button
       type="button"
       onClick={onClick}
-      title={`Eliminar ${nombre} del catálogo`}
-      aria-label={`Eliminar ${nombre} del catálogo`}
+      title={t.tabla.eliminar(nombre)}
+      aria-label={t.tabla.eliminar(nombre)}
       /* 44x44 css px de área tocable: es un botón destructivo y en móvil vive
          al lado de la casilla de incluir. */
       className="text-suave hover:text-lat text-lg leading-none rounded transition-colors grid place-items-center w-11 h-11 -my-2"
@@ -99,9 +82,36 @@ function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => voi
 }
 
 export function TablaGPUs(p: Props) {
-  const { filas, modo, eff, slo_ms, G, mejorId, foco, setFoco } = p;
+  const { filas, modo, modeloNombre, eff, slo_ms, G, mejorId, foco, setFoco } = p;
+  const t = useTextos();
   const dim = modo === "dimensionar";
-  const etiquetaMejor = dim ? "más barata" : "más capacidad";
+  const etiquetaMejor = dim ? t.tabla.masBarata : t.tabla.masCapacidad;
+
+  // Los encabezados se arman aquí dentro: son texto de interfaz y cambian con
+  // el idioma, así que ya no pueden vivir como constantes del módulo.
+  const COLS_DIM = [
+    t.tabla.colGPU,
+    t.tabla.colVRAM,
+    t.tabla.colAncho,
+    t.tabla.colPrecio,
+    t.tabla.colGPUs,
+    t.tabla.colPresion,
+    t.tabla.colTPOT,
+    t.tabla.colTokS,
+    t.tabla.colCosto,
+  ];
+
+  const COLS_CAP = [
+    t.tabla.colGPU,
+    t.tabla.colVRAM,
+    t.tabla.colAncho,
+    t.tabla.colPrecio,
+    t.tabla.colUsuarios,
+    t.tabla.colSoloAgentes,
+    t.tabla.colCuello,
+    t.tabla.colTPOT,
+    t.tabla.colCosto,
+  ];
 
   return (
     <>
@@ -109,7 +119,7 @@ export function TablaGPUs(p: Props) {
       <div className="hidden md:block rounded border border-linea bg-superficie overflow-x-auto">
         <table className="w-full text-sm" style={{ minWidth: 820 }}>
           <caption className="sr-only">
-            Resultado por GPU en modo {dim ? "dimensionar" : "capacidad"}
+            {t.tabla.caption(dim ? t.tabla.modoDim : t.tabla.modoCap)}
           </caption>
           <thead>
             <tr className="bg-fondo">
@@ -148,7 +158,7 @@ export function TablaGPUs(p: Props) {
                       <input
                         type="checkbox"
                         checked={f.gpu.on}
-                        aria-label={`Incluir ${f.gpu.nombre} en la comparación`}
+                        aria-label={t.tabla.incluir(f.gpu.nombre)}
                         onChange={() => p.onCambiar(f.gpu.id, { on: !f.gpu.on })}
                       />
                       <span className={esMejor ? "font-semibold" : ""}>{f.gpu.nombre}</span>
@@ -176,7 +186,7 @@ export function TablaGPUs(p: Props) {
 
                   {!f.techos.viable ? (
                     <td colSpan={5} className="px-3 py-2 text-xs text-lat">
-                      {f.techos.motivo}
+                      {motivoDe(t, f.techos, modeloNombre, f.gpu.nombre, slo_ms)}
                     </td>
                   ) : dim ? (
                     <>
@@ -220,7 +230,7 @@ export function TablaGPUs(p: Props) {
                           (f.cap.alcanza ? (esMejor ? "text-mem font-semibold" : "") : "text-lat")
                         }
                       >
-                        {f.cap.alcanza ? fmt(f.cap.usuarios) : "no alcanza"}
+                        {f.cap.alcanza ? fmt(f.cap.usuarios) : t.tabla.noAlcanza}
                       </td>
                       <td className="px-3 py-2 text-right mono text-suave">
                         {fmt(f.soloAgentes)}
@@ -228,7 +238,7 @@ export function TablaGPUs(p: Props) {
                       <td
                         className={"px-3 py-2 text-right text-xs " + (clase ? clase.texto : "")}
                       >
-                        {f.cap.alcanza ? nombreCuello(cuello) : "—"}
+                        {f.cap.alcanza ? nombreCuello(t, cuello) : t.cuellos.ninguno}
                       </td>
                       <td
                         className={
@@ -275,7 +285,7 @@ export function TablaGPUs(p: Props) {
                   <input
                     type="checkbox"
                     checked={f.gpu.on}
-                    aria-label={`Incluir ${f.gpu.nombre} en la comparación`}
+                    aria-label={t.tabla.incluir(f.gpu.nombre)}
                     onChange={() => p.onCambiar(f.gpu.id, { on: !f.gpu.on })}
                   />
                   <span className={"truncate " + (esMejor ? "font-semibold" : "")}>
@@ -296,13 +306,13 @@ export function TablaGPUs(p: Props) {
               </header>
 
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
-                <Dato k="VRAM" v={`${f.gpu.vram_gb} GB`} />
+                <Dato k={t.tabla.colVRAM} v={`${f.gpu.vram_gb} GB`} />
                 <Dato
-                  k="GB/s nom → efect"
+                  k={t.tabla.colAncho}
                   v={`${fmt(f.gpu.bw_gbs)} → ${fmt(f.gpu.bw_gbs * eff)}`}
                 />
                 <div className="col-span-2 flex items-center justify-between gap-2 py-0.5">
-                  <dt className="text-xs text-suave">Precio USD/h</dt>
+                  <dt className="text-xs text-suave">{t.tabla.precioUSD}</dt>
                   <dd>
                     <PrecioInput
                       id={f.gpu.nombre}
@@ -317,15 +327,15 @@ export function TablaGPUs(p: Props) {
                 {f.techos.viable &&
                   (dim ? (
                     <>
-                      <Dato k="GPUs" v={String(f.dim.G)} destacado />
+                      <Dato k={t.tabla.colGPUs} v={String(f.dim.G)} destacado />
                       <Dato
-                        k="TPOT"
+                        k={t.tabla.colTPOT}
                         v={`${fmt(f.dim.tpot_ms, 1)} ms`}
                         clase={cumple ? "" : "text-lat"}
                       />
-                      <Dato k="tok/s sesión" v={fmt(f.dim.tok_s_sesion, 1)} />
+                      <Dato k={t.tabla.colTokS} v={fmt(f.dim.tok_s_sesion, 1)} />
                       <Dato
-                        k="Costo/h"
+                        k={t.tabla.colCosto}
                         v={usd(f.dim.costo_hora)}
                         clase={clase ? clase.texto : ""}
                         destacado
@@ -334,37 +344,39 @@ export function TablaGPUs(p: Props) {
                   ) : (
                     <>
                       <Dato
-                        k={`Usuarios con ${G} GPUs`}
-                        v={f.cap.alcanza ? fmt(f.cap.usuarios) : "no alcanza"}
+                        k={t.tabla.usuariosCon(String(G))}
+                        v={f.cap.alcanza ? fmt(f.cap.usuarios) : t.tabla.noAlcanza}
                         clase={f.cap.alcanza ? "text-mem" : "text-lat"}
                         destacado
                       />
-                      <Dato k="Solo agentes" v={fmtCorto(f.soloAgentes)} />
+                      <Dato k={t.tabla.colSoloAgentes} v={fmtCorto(f.soloAgentes)} />
                       <Dato
-                        k="Cuello"
-                        v={f.cap.alcanza ? nombreCuello(cuello) : "—"}
+                        k={t.tabla.colCuello}
+                        v={f.cap.alcanza ? nombreCuello(t, cuello) : t.cuellos.ninguno}
                         clase={clase ? clase.texto : ""}
                       />
                       <Dato
-                        k="TPOT"
+                        k={t.tabla.colTPOT}
                         v={f.cap.alcanza ? `${fmt(f.cap.tpot_ms, 1)} ms` : "—"}
                         clase={cumple ? "" : "text-lat"}
                       />
-                      <Dato k="Costo/h" v={usd(f.cap.costo_hora)} destacado />
+                      <Dato k={t.tabla.colCosto} v={usd(f.cap.costo_hora)} destacado />
                     </>
                   ))}
               </dl>
 
               {!f.techos.viable && (
-                <p className="text-xs text-lat mt-2">{f.techos.motivo}</p>
+                <p className="text-xs text-lat mt-2">
+                  {motivoDe(t, f.techos, modeloNombre, f.gpu.nombre, slo_ms)}
+                </p>
               )}
 
               {f.techos.viable && dim && (
                 <div className="mt-3 pt-2 border-t border-linea">
                   <div className="text-xs text-suave mb-1">
-                    Presión por restricción · manda{" "}
+                    {t.tabla.presionManda}{" "}
                     <span className={clase ? clase.texto : ""}>
-                      {nombreCuello(f.dim.cuello)}
+                      {nombreCuello(t, f.dim.cuello)}
                     </span>
                   </div>
                   <BarrasPresion

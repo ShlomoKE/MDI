@@ -10,7 +10,9 @@ export type Celda = string | number | boolean | null | undefined;
 
 function celda(v: Celda): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "boolean") return v ? "sí" : "no";
+  // Booleanos neutros: el CSV lo lee pandas o una hoja de cálculo, no una
+  // persona, y "sí"/"no" además dependería del idioma de la página.
+  if (typeof v === "boolean") return v ? "true" : "false";
   if (typeof v === "number") {
     if (!Number.isFinite(v)) return "";
     // Suficientes cifras para no perder nada al comparar contra Python.

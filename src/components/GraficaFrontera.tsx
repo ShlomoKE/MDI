@@ -8,6 +8,7 @@
  * de bytes a cómputo aparece un codo, y ese codo es información.
  */
 
+import { useTextos } from "../i18n/contexto";
 import { COLOR, colorCuello, fmt } from "../lib/formato";
 import type { Fila } from "../lib/resultados";
 import { VacioSVG } from "./GraficaPareto";
@@ -33,14 +34,11 @@ const PH = H - MT - MB;
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
+  const t = useTextos();
   const ok = filas.filter((f) => f.techos.viable && f.frontera.length > 1);
 
   if (!ok.length) {
-    return (
-      <VacioSVG
-        texto={`Ninguna GPU del catálogo sostiene esta carga con ${G} unidades.`}
-      />
-    );
+    return <VacioSVG texto={t.graficas.vacioFrontera(String(G))} />;
   }
 
   const maxX = Math.max(Ua * 1.2, ...ok.map((f) => f.soloAgentes), 1) * 1.08;
@@ -55,7 +53,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
       className="w-full h-auto"
       style={{ maxHeight: 380 }}
       role="img"
-      aria-label={`Frontera de capacidad con ${G} GPUs: usuarios que caben según cuántos agentes se fijen`}
+      aria-label={t.graficas.ariaFrontera(String(G))}
     >
       {TICKS.map((t) => (
         <g key={"y" + t}>
@@ -95,7 +93,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
       ))}
 
       <text x={ML + PW / 2} y={H - 6} textAnchor="middle" fontSize="11" fill={COLOR.suave}>
-        Agentes
+        {t.graficas.ejeAgentes}
       </text>
       <text
         x={14}
@@ -105,7 +103,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
         fill={COLOR.suave}
         transform={`rotate(-90 14 ${MT + PH / 2})`}
       >
-        Usuarios
+        {t.graficas.ejeUsuarios}
       </text>
 
       {/* una curva por GPU */}
@@ -137,7 +135,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
             strokeDasharray="4 3"
           />
           <text x={px(Ua) + 5} y={MT + 12} fontSize="10" fill={COLOR.tinta} className="mono">
-            {fmt(Ua)} agentes
+            {fmt(Ua)} {t.graficas.agentesSufijo}
           </text>
         </>
       )}
@@ -156,9 +154,13 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            aria-label={`${f.gpu.nombre}: ${
-              f.cap.alcanza ? fmt(f.cap.usuarios) + " usuarios" : "no alcanza"
-            } con ${fmt(Ua)} agentes`}
+            aria-label={t.graficas.puntoFrontera(
+              f.gpu.nombre,
+              f.cap.alcanza
+                ? `${fmt(f.cap.usuarios)} ${t.graficas.usuariosSufijo}`
+                : t.calculadora.noAlcanza,
+              fmt(Ua),
+            )}
             style={{ cursor: "pointer" }}
           >
             <circle cx={x} cy={y} r={26} fill="transparent" />
@@ -182,7 +184,9 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
                 fill={COLOR.suave}
                 className="mono"
               >
-                {f.cap.alcanza ? `${fmt(f.cap.usuarios)} usuarios` : "no alcanza"}
+                {f.cap.alcanza
+                  ? `${fmt(f.cap.usuarios)} ${t.graficas.usuariosSufijo}`
+                  : t.calculadora.noAlcanza}
               </text>
             )}
           </g>

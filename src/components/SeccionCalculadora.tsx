@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useTextos } from "../i18n/contexto";
 import Calculadora from "./Calculadora";
 
 /** Cuánto antes de entrar en pantalla se monta. */
@@ -71,15 +72,17 @@ export function SeccionCalculadora() {
 
 /** Lo que se ve el instante que va entre llegar y montar. */
 function Marcador() {
+  const t = useTextos();
+
   return (
     <div
       className="border-y border-linea bg-superficie px-4 sm:px-6 py-5 min-h-[70vh]"
       aria-busy="true"
     >
       <h2 className="font-cond font-bold text-2xl sm:text-[26px] tracking-tight">
-        Calculadora MDI
+        {t.calculadora.titulo}
       </h2>
-      <p className="text-sm mt-1 text-suave">Preparando la calculadora…</p>
+      <p className="text-sm mt-1 text-suave">{t.calculadora.cargando}</p>
     </div>
   );
 }

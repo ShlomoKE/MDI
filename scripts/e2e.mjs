@@ -18,7 +18,7 @@
 import { launch } from 'chrome-launcher';
 import puppeteer from 'puppeteer-core';
 
-const base = 'http://localhost:4173';
+const base = (process.argv[2] || 'http://localhost:4173').replace(/\/+$/, '');
 const chrome = await launch({ chromeFlags: ['--headless=new', '--no-sandbox', '--disable-gpu'] });
 const fallos = [];
 const ok = (c, m) => { console.log((c ? '  OK   ' : '  FALLA') + '  ' + m); if (!c) fallos.push(m); };
@@ -86,6 +86,61 @@ try {
   // la navegación móvil existe y lista las secciones
   const secciones = await movil.$$eval('nav[aria-label="Secciones"] a', (n) => n.length);
   ok(secciones >= 9, `la navegación lista ${secciones} secciones`);
+
+  // ---------- 3. La página en inglés ----------
+  const ingles = await browser.newPage();
+  await ingles.setViewport({ width: 1440, height: 900 });
+  const consolaEn = [];
+  ingles.on('console', (m) => { if (['error', 'warning'].includes(m.type())) consolaEn.push(m.type() + ': ' + m.text()); });
+  ingles.on('pageerror', (e) => consolaEn.push('pageerror: ' + e.message));
+  await ingles.goto(base + '/en/', { waitUntil: 'networkidle0' });
+
+  ok((await ingles.$eval('html', (e) => e.lang)) === 'en', 'la página inglesa declara lang="en"');
+
+  const tituloEn = await ingles.title();
+  ok(/inference/i.test(tituloEn), `el <title> está en inglés: "${tituloEn}"`);
+
+  const hreflang = await ingles.$$eval('link[rel="alternate"]', (n) =>
+    n.map((l) => l.getAttribute('hreflang') + '=' + l.getAttribute('href')));
+  ok(hreflang.includes('es=/') && hreflang.includes('en=/en/'),
+     `hreflang enlaza las dos versiones: ${JSON.stringify(hreflang)}`);
+
+  const textoEn = await ingles.$eval('#documento', (e) => e.textContent);
+  ok(!/cómputo|memoria|ancho de banda/.test(textoEn),
+     'el documento inglés no tiene restos de español');
+
+  // El selector lleva de vuelta al español conservando el ancla.
+  await ingles.goto(base + '/en/#limitations', { waitUntil: 'networkidle0' });
+  // El sufijo lo rellena un efecto tras hidratar, así que se espera a que llegue
+  // en vez de leerlo de inmediato.
+  let destino = '(sin actualizar)';
+  try {
+    await ingles.waitForFunction(
+      () => document.querySelector('a[hreflang="es"]')?.getAttribute('href') !== '/',
+      { timeout: 5000 },
+    );
+    destino = await ingles.$eval('a[hreflang="es"]', (a) => a.getAttribute('href'));
+  } catch { /* se reporta abajo */ }
+  ok(destino === '/#limitations', `el selector conserva el ancla: ${destino}`);
+
+  // Y la calculadora inglesa da los mismos números, que es lo que importa.
+  await ingles.goto(base + '/en/#calculadora', { waitUntil: 'networkidle0' });
+  await ingles.waitForSelector('#calculadora table', { timeout: 8000 });
+  const calcEn = await ingles.$eval('#calculadora', (e) => e.textContent);
+  ok(calcEn.includes('29.4 ms'), 'la calculadora inglesa da el mismo TPOT que motor.py');
+  ok(!calcEn.includes('SLO de 30 ms inalcanzable'), 'el motivo del motor sale traducido en inglés');
+  ok(/unreachable/i.test(calcEn), 'y sale en inglés');
+
+  // El caso que de verdad duele: armar una configuración —que la calculadora
+  // escribe con replaceState, sin disparar eventos— y cambiar de idioma.
+  await ingles.goto(base + '/en/?slo=45&ua=99#calculadora', { waitUntil: 'networkidle0' });
+  await ingles.waitForSelector('#calculadora table', { timeout: 8000 });
+  await ingles.hover('a[hreflang="es"]');
+  const conConfig = await ingles.$eval('a[hreflang="es"]', (a) => a.getAttribute('href'));
+  ok(conConfig.includes('slo=45') && conConfig.includes('ua=99'),
+     `cambiar de idioma conserva la configuración: ${conConfig}`);
+
+  ok(consolaEn.length === 0, 'sin errores de consola en la página inglesa' + (consolaEn.length ? ': ' + consolaEn.join(' | ') : ''));
 
   ok(consola.length === 0, 'sin errores de consola en escritorio' + (consola.length ? ': ' + consola.join(' | ') : ''));
   ok(consolaM.length === 0, 'sin errores de consola en móvil' + (consolaM.length ? ': ' + consolaM.join(' | ') : ''));

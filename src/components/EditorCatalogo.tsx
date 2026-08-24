@@ -14,6 +14,7 @@ import { GPUS, MODELOS, gpuNueva, modeloNuevo, type GPUCatalogo, type ModeloCata
 import { QUANTS, type Quant } from "../lib/motor";
 import { enGB, enKB } from "../lib/formato";
 import { KVt, Pm } from "../lib/motor";
+import { useTextos } from "../i18n/contexto";
 
 interface Props {
   gpus: GPUCatalogo[];
@@ -28,6 +29,7 @@ let contador = 0;
 const nuevoId = (prefijo: string) => `${prefijo}-${Date.now().toString(36)}-${contador++}`;
 
 export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: Props) {
+  const t = useTextos();
   const [abierto, setAbierto] = useState(false);
   const [pestana, setPestana] = useState<"gpus" | "modelos">("gpus");
 
@@ -44,7 +46,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
   };
 
   const duplicarModelo = (m: ModeloCatalogo) => {
-    const copia: ModeloCatalogo = { ...m, id: nuevoId("m"), nombre: m.nombre + " (copia)" };
+    const copia: ModeloCatalogo = { ...m, id: nuevoId("m"), nombre: m.nombre + t.catalogo.sufijoCopia };
     const i = modelos.findIndex((x) => x.id === m.id);
     const resto = [...modelos.slice(0, i + 1), copia, ...modelos.slice(i + 1)];
     onModelos(resto, copia.id);
@@ -58,9 +60,9 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
         aria-expanded={abierto}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-fondo transition-colors rounded"
       >
-        <span className="rotulo text-tinta">Catálogo</span>
+        <span className="rotulo text-tinta">{t.catalogo.titulo}</span>
         <span className="text-xs text-suave">
-          {gpus.length} GPUs · {modelos.length} modelos {abierto ? "▲" : "▼"}
+          {t.catalogo.resumen(gpus.length, modelos.length)} {abierto ? "▲" : "▼"}
         </span>
       </button>
 
@@ -70,8 +72,8 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
             <div className="flex rounded border border-linea overflow-hidden">
               {(
                 [
-                  ["gpus", "GPUs"],
-                  ["modelos", "Modelos"],
+                  ["gpus", t.catalogo.pestanaGPUs],
+                  ["modelos", t.catalogo.pestanaModelos],
                 ] as Array<[typeof pestana, string]>
               ).map(([k, l]) => (
                 <button
@@ -91,10 +93,10 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
               {pestana === "gpus" ? (
                 <>
                   <Boton onClick={() => onGpus([...gpus, gpuNueva(nuevoId("g"))])}>
-                    + Agregar GPU
+                    {t.catalogo.agregarGPU}
                   </Boton>
-                  <Boton variante="sutil" onClick={() => onGpus(GPUS)} titulo="Volver al catálogo de fábrica">
-                    Restaurar
+                  <Boton variante="sutil" onClick={() => onGpus(GPUS)} titulo={t.catalogo.tituloRestaurar}>
+                    {t.catalogo.restaurar}
                   </Boton>
                 </>
               ) : (
@@ -103,14 +105,14 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                     const m = modeloNuevo(nuevoId("m"));
                     onModelos([...modelos, m], m.id);
                   }}>
-                    + Agregar modelo
+                    {t.catalogo.agregarModelo}
                   </Boton>
                   <Boton
                     variante="sutil"
                     onClick={() => onModelos(MODELOS, MODELOS[0].id)}
-                    titulo="Volver al catálogo de fábrica"
+                    titulo={t.catalogo.tituloRestaurar}
                   >
-                    Restaurar
+                    {t.catalogo.restaurar}
                   </Boton>
                 </>
               )}
@@ -125,7 +127,14 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
               <table className="w-full text-sm" style={{ minWidth: 620 }}>
                 <thead>
                   <tr className="text-suave">
-                    {["Nombre", "VRAM GB", "BW GB/s", "TFLOPS", "USD/h", ""].map((h, i) => (
+                    {[
+                      t.catalogo.colNombre,
+                      t.catalogo.colVRAM,
+                      t.catalogo.colAncho,
+                      t.catalogo.colTFLOPS,
+                      t.catalogo.colPrecio,
+                      "",
+                    ].map((h, i) => (
                       <th
                         key={h || i}
                         scope="col"
@@ -141,25 +150,25 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                   {gpus.map((g) => (
                     <tr key={g.id} className="border-t border-linea">
                       <td className="py-1.5 px-1 min-w-40">
-                        <Texto valor={g.nombre} set={(v) => editarGpu(g.id, { nombre: v })} etiqueta="Nombre de la GPU" />
+                        <Texto valor={g.nombre} set={(v) => editarGpu(g.id, { nombre: v })} etiqueta={t.catalogo.nombreGPU} />
                       </td>
                       <td className="py-1.5 px-1 w-24">
-                        <Numero valor={g.vram_gb} set={(v) => editarGpu(g.id, { vram_gb: v })} etiqueta={`VRAM de ${g.nombre}`} paso={8} />
+                        <Numero valor={g.vram_gb} set={(v) => editarGpu(g.id, { vram_gb: v })} etiqueta={t.catalogo.vramDe(g.nombre)} paso={8} />
                       </td>
                       <td className="py-1.5 px-1 w-24">
-                        <Numero valor={g.bw_gbs} set={(v) => editarGpu(g.id, { bw_gbs: v })} etiqueta={`Ancho de banda de ${g.nombre}`} paso={100} />
+                        <Numero valor={g.bw_gbs} set={(v) => editarGpu(g.id, { bw_gbs: v })} etiqueta={t.catalogo.anchoDe(g.nombre)} paso={100} />
                       </td>
                       <td className="py-1.5 px-1 w-24">
-                        <Numero valor={g.tflops} set={(v) => editarGpu(g.id, { tflops: v })} etiqueta={`TFLOPS de ${g.nombre}`} paso={50} />
+                        <Numero valor={g.tflops} set={(v) => editarGpu(g.id, { tflops: v })} etiqueta={t.catalogo.tflopsDe(g.nombre)} paso={50} />
                       </td>
                       <td className="py-1.5 px-1 w-20">
-                        <Numero valor={g.precio_hora} set={(v) => editarGpu(g.id, { precio_hora: v })} etiqueta={`Precio de ${g.nombre}`} paso={0.1} />
+                        <Numero valor={g.precio_hora} set={(v) => editarGpu(g.id, { precio_hora: v })} etiqueta={t.catalogo.precioDe(g.nombre)} paso={0.1} />
                       </td>
                       <td className="py-1.5 px-1 w-8 text-center">
                         <button
                           type="button"
                           onClick={() => onGpus(gpus.filter((x) => x.id !== g.id))}
-                          aria-label={`Eliminar ${g.nombre}`}
+                          aria-label={t.catalogo.eliminar(g.nombre)}
                           className="text-suave hover:text-lat px-1 rounded transition-colors"
                         >
                           ×
@@ -173,7 +182,17 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
               <table className="w-full text-sm" style={{ minWidth: 700 }}>
                 <thead>
                   <tr className="text-suave">
-                    {["Nombre", "N (B)", "Lₐ", "H", "dₖ", "Pesos", "Caché", "Derivados", ""].map((h, i) => (
+                    {[
+                      t.catalogo.colNombre,
+                      t.catalogo.colN,
+                      t.catalogo.colCapas,
+                      t.catalogo.colCabezas,
+                      t.catalogo.colDim,
+                      t.catalogo.colPesos,
+                      t.catalogo.colCache,
+                      t.catalogo.colDerivados,
+                      "",
+                    ].map((h, i) => (
                       <th
                         key={h || i}
                         scope="col"
@@ -189,32 +208,32 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                   {modelos.map((m) => (
                     <tr key={m.id} className="border-t border-linea">
                       <td className="py-1.5 px-1 min-w-40">
-                        <Texto valor={m.nombre} set={(v) => editarModelo(m.id, { nombre: v })} etiqueta="Nombre del modelo" />
+                        <Texto valor={m.nombre} set={(v) => editarModelo(m.id, { nombre: v })} etiqueta={t.catalogo.nombreModelo} />
                       </td>
                       <td className="py-1.5 px-1 w-20">
-                        <Numero valor={m.N} set={(v) => editarModelo(m.id, { N: v })} etiqueta={`Parámetros de ${m.nombre}`} />
+                        <Numero valor={m.N} set={(v) => editarModelo(m.id, { N: v })} etiqueta={t.catalogo.paramsDe(m.nombre)} />
                       </td>
                       <td className="py-1.5 px-1 w-16">
-                        <Numero valor={m.capas_atn} set={(v) => editarModelo(m.id, { capas_atn: v })} etiqueta={`Capas de atención de ${m.nombre}`} />
+                        <Numero valor={m.capas_atn} set={(v) => editarModelo(m.id, { capas_atn: v })} etiqueta={t.catalogo.capasDe(m.nombre)} />
                       </td>
                       <td className="py-1.5 px-1 w-16">
-                        <Numero valor={m.kv_heads} set={(v) => editarModelo(m.id, { kv_heads: v })} etiqueta={`Cabezas KV de ${m.nombre}`} />
+                        <Numero valor={m.kv_heads} set={(v) => editarModelo(m.id, { kv_heads: v })} etiqueta={t.catalogo.cabezasDe(m.nombre)} />
                       </td>
                       <td className="py-1.5 px-1 w-20">
-                        <Numero valor={m.head_dim} set={(v) => editarModelo(m.id, { head_dim: v })} etiqueta={`Dimensión por cabeza de ${m.nombre}`} paso={32} />
+                        <Numero valor={m.head_dim} set={(v) => editarModelo(m.id, { head_dim: v })} etiqueta={t.catalogo.dimDe(m.nombre)} paso={32} />
                       </td>
                       <td className="py-1.5 px-1 w-20">
                         <SelectQuant
                           valor={m.quant_pesos}
                           set={(v) => editarModelo(m.id, { quant_pesos: v })}
-                          etiqueta={`Cuantización de pesos de ${m.nombre}`}
+                          etiqueta={t.catalogo.quantPesosDe(m.nombre)}
                         />
                       </td>
                       <td className="py-1.5 px-1 w-20">
                         <SelectQuant
                           valor={m.quant_cache}
                           set={(v) => editarModelo(m.id, { quant_cache: v })}
-                          etiqueta={`Cuantización de caché de ${m.nombre}`}
+                          etiqueta={t.catalogo.quantCacheDe(m.nombre)}
                         />
                       </td>
                       <td className="py-1.5 px-1 text-xs text-suave mono whitespace-nowrap">
@@ -224,8 +243,8 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                         <button
                           type="button"
                           onClick={() => duplicarModelo(m)}
-                          aria-label={`Duplicar ${m.nombre}`}
-                          title="Duplicar"
+                          aria-label={t.catalogo.duplicar(m.nombre)}
+                          title={t.catalogo.tituloDuplicar}
                           className="text-suave hover:text-tinta px-1 rounded transition-colors"
                         >
                           ⧉
@@ -233,7 +252,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                         <button
                           type="button"
                           onClick={() => eliminarModelo(m.id)}
-                          aria-label={`Eliminar ${m.nombre}`}
+                          aria-label={t.catalogo.eliminar(m.nombre)}
                           disabled={modelos.length <= 1}
                           className="text-suave hover:text-lat px-1 rounded transition-colors disabled:opacity-30"
                         >
@@ -256,10 +275,10 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                       <Texto
                         valor={g.nombre}
                         set={(v) => editarGpu(g.id, { nombre: v })}
-                        etiqueta="Nombre de la GPU"
+                        etiqueta={t.catalogo.nombreGPU}
                       />
                       <BotonIcono
-                        etiqueta={`Eliminar ${g.nombre}`}
+                        etiqueta={t.catalogo.eliminar(g.nombre)}
                         onClick={() => onGpus(gpus.filter((x) => x.id !== g.id))}
                         peligro
                       >
@@ -267,17 +286,17 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                       </BotonIcono>
                     </div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                      <CampoTarjeta etiqueta="VRAM (GB)">
-                        <Numero valor={g.vram_gb} set={(v) => editarGpu(g.id, { vram_gb: v })} etiqueta={`VRAM de ${g.nombre}`} paso={8} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoVRAM}>
+                        <Numero valor={g.vram_gb} set={(v) => editarGpu(g.id, { vram_gb: v })} etiqueta={t.catalogo.vramDe(g.nombre)} paso={8} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="Ancho de banda (GB/s)">
-                        <Numero valor={g.bw_gbs} set={(v) => editarGpu(g.id, { bw_gbs: v })} etiqueta={`Ancho de banda de ${g.nombre}`} paso={100} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoAncho}>
+                        <Numero valor={g.bw_gbs} set={(v) => editarGpu(g.id, { bw_gbs: v })} etiqueta={t.catalogo.anchoDe(g.nombre)} paso={100} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="TFLOPS">
-                        <Numero valor={g.tflops} set={(v) => editarGpu(g.id, { tflops: v })} etiqueta={`TFLOPS de ${g.nombre}`} paso={50} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoTFLOPS}>
+                        <Numero valor={g.tflops} set={(v) => editarGpu(g.id, { tflops: v })} etiqueta={t.catalogo.tflopsDe(g.nombre)} paso={50} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="Precio (USD/h)">
-                        <Numero valor={g.precio_hora} set={(v) => editarGpu(g.id, { precio_hora: v })} etiqueta={`Precio de ${g.nombre}`} paso={0.1} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoPrecio}>
+                        <Numero valor={g.precio_hora} set={(v) => editarGpu(g.id, { precio_hora: v })} etiqueta={t.catalogo.precioDe(g.nombre)} paso={0.1} />
                       </CampoTarjeta>
                     </div>
                   </article>
@@ -288,13 +307,13 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                       <Texto
                         valor={m.nombre}
                         set={(v) => editarModelo(m.id, { nombre: v })}
-                        etiqueta="Nombre del modelo"
+                        etiqueta={t.catalogo.nombreModelo}
                       />
-                      <BotonIcono etiqueta={`Duplicar ${m.nombre}`} onClick={() => duplicarModelo(m)}>
+                      <BotonIcono etiqueta={t.catalogo.duplicar(m.nombre)} onClick={() => duplicarModelo(m)}>
                         ⧉
                       </BotonIcono>
                       <BotonIcono
-                        etiqueta={`Eliminar ${m.nombre}`}
+                        etiqueta={t.catalogo.eliminar(m.nombre)}
                         onClick={() => eliminarModelo(m.id)}
                         desactivado={modelos.length <= 1}
                         peligro
@@ -303,23 +322,23 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                       </BotonIcono>
                     </div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                      <CampoTarjeta etiqueta="N (miles de millones)">
-                        <Numero valor={m.N} set={(v) => editarModelo(m.id, { N: v })} etiqueta={`Parámetros de ${m.nombre}`} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoN}>
+                        <Numero valor={m.N} set={(v) => editarModelo(m.id, { N: v })} etiqueta={t.catalogo.paramsDe(m.nombre)} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="Lₐ capas de atención">
-                        <Numero valor={m.capas_atn} set={(v) => editarModelo(m.id, { capas_atn: v })} etiqueta={`Capas de atención de ${m.nombre}`} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoCapas}>
+                        <Numero valor={m.capas_atn} set={(v) => editarModelo(m.id, { capas_atn: v })} etiqueta={t.catalogo.capasDe(m.nombre)} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="H cabezas KV">
-                        <Numero valor={m.kv_heads} set={(v) => editarModelo(m.id, { kv_heads: v })} etiqueta={`Cabezas KV de ${m.nombre}`} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoCabezas}>
+                        <Numero valor={m.kv_heads} set={(v) => editarModelo(m.id, { kv_heads: v })} etiqueta={t.catalogo.cabezasDe(m.nombre)} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="dₖ dimensión">
-                        <Numero valor={m.head_dim} set={(v) => editarModelo(m.id, { head_dim: v })} etiqueta={`Dimensión por cabeza de ${m.nombre}`} paso={32} />
+                      <CampoTarjeta etiqueta={t.catalogo.campoDim}>
+                        <Numero valor={m.head_dim} set={(v) => editarModelo(m.id, { head_dim: v })} etiqueta={t.catalogo.dimDe(m.nombre)} paso={32} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="Pesos">
-                        <SelectQuant valor={m.quant_pesos} set={(v) => editarModelo(m.id, { quant_pesos: v })} etiqueta={`Cuantización de pesos de ${m.nombre}`} />
+                      <CampoTarjeta etiqueta={t.catalogo.colPesos}>
+                        <SelectQuant valor={m.quant_pesos} set={(v) => editarModelo(m.id, { quant_pesos: v })} etiqueta={t.catalogo.quantPesosDe(m.nombre)} />
                       </CampoTarjeta>
-                      <CampoTarjeta etiqueta="Caché">
-                        <SelectQuant valor={m.quant_cache} set={(v) => editarModelo(m.id, { quant_cache: v })} etiqueta={`Cuantización de caché de ${m.nombre}`} />
+                      <CampoTarjeta etiqueta={t.catalogo.colCache}>
+                        <SelectQuant valor={m.quant_cache} set={(v) => editarModelo(m.id, { quant_cache: v })} etiqueta={t.catalogo.quantCacheDe(m.nombre)} />
                       </CampoTarjeta>
                     </div>
                     <p className="text-xs text-suave mono mt-2">
@@ -330,9 +349,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
           </div>
 
           <p className="text-xs text-suave mt-3 leading-relaxed">
-            {pestana === "gpus"
-              ? "Los precios son referenciales: CAPEX amortizado más OPEX, no una cotización. El factor de eficiencia se aplica por igual a todo el catálogo desde el panel de parámetros."
-              : "Lₐ son las capas que generan KV cache, no las totales. En arquitecturas híbridas solo cuenta una fracción de las capas, y ahí está casi toda la diferencia de caché entre modelos del mismo tamaño."}
+            {pestana === "gpus" ? t.catalogo.notaGPUs : t.catalogo.notaModelos}
           </p>
         </div>
       )}

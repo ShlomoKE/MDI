@@ -13,9 +13,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import DocumentoEs from "./contenido/documento.mdx";
+import DocumentoEn from "./contenido/documento.en.mdx";
 import { GPUS, MODELOS } from "./lib/catalogos";
 import { fmt } from "./lib/formato";
 import { serializar, leer, ESTADO_INICIAL, type Estado } from "./lib/urlEstado";
+import type { Idioma } from "./i18n/idioma";
+import { TEXTOS } from "./i18n/textos";
 
 let contenedor: HTMLDivElement;
 let raiz: Root;
@@ -36,9 +40,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function montar() {
+function montar(idioma: Idioma = "es") {
+  // En producción el documento lo resuelve `main.tsx` con un import dinámico,
+  // uno por idioma; aquí se pasa directo porque la prueba ya sabe cuál quiere.
   act(() => {
-    raiz.render(<App />);
+    raiz.render(<App idioma={idioma} Documento={idioma === "en" ? DocumentoEn : DocumentoEs} />);
   });
 }
 
@@ -155,8 +161,15 @@ describe("la página monta sin errores", () => {
     expect(texto).toContain(fmt(338));
     // El TPOT de la H100 SXM: 29.4 ms con 3 unidades.
     expect(texto).toContain("29.4 ms");
-    // Y los motivos de inviabilidad, textuales.
+    // El motivo de inviabilidad, textual. Tiene que coincidir letra por letra con
+    // el que imprime `python motor.py`: scripts/comparar.mjs compara los dos.
     expect(texto).toContain("SLO de 30 ms inalcanzable en L40S");
+    expect(TEXTOS.es.motivo.sloInalcanzable("30", "L40S")).toBe(
+      "SLO de 30 ms inalcanzable en L40S",
+    );
+    expect(TEXTOS.es.motivo.noCabe("Denso 70B", "H100 SXM")).toBe(
+      "Denso 70B no cabe en H100 SXM",
+    );
   });
 
   it("las tablas de escritorio tienen su equivalente en tarjetas para móvil", () => {
@@ -166,6 +179,144 @@ describe("la página monta sin errores", () => {
     const tarjetas = contenedor.querySelectorAll("#calculadora .md\\:hidden article");
     expect(tabla).not.toBeNull();
     expect(tarjetas.length).toBe(GPUS.length);
+  });
+});
+
+describe("la página en inglés", () => {
+  it("monta sin ensuciar la consola", () => {
+    montar("en");
+    expect(problemas, problemas.join(" | ")).toEqual([]);
+    expect(contenedor.querySelector("#documento")).not.toBeNull();
+    expect(contenedor.querySelectorAll(".katex").length).toBeGreaterThan(10);
+  });
+
+  it("no queda nada del español en la interfaz", () => {
+    montar("en");
+    const texto = (contenedor.textContent ?? "").replace(/\s+/g, " ");
+
+    // Cadenas del diccionario español que no deben aparecer en la página inglesa.
+    const delatores = [
+      TEXTOS.es.encabezado.firma,
+      TEXTOS.es.encabezado.irCalculadora,
+      TEXTOS.es.encabezado.comoCitar,
+      TEXTOS.es.navegacion.contenido,
+      TEXTOS.es.calculadora.titulo,
+      TEXTOS.es.calculadora.modoDim,
+      TEXTOS.es.calculadora.modoCap,
+      TEXTOS.es.cuellos.computo,
+    ];
+    for (const d of delatores) {
+      expect(texto, `quedó en español: "${d}"`).not.toContain(d);
+    }
+
+    // Y sí debe aparecer su equivalente en inglés.
+    expect(texto).toContain(TEXTOS.en.encabezado.firma);
+    expect(texto).toContain(TEXTOS.en.encabezado.titulo);
+    expect(texto).toContain(TEXTOS.en.navegacion.contenido);
+  });
+
+  it("el documento está traducido y conserva su estructura", () => {
+    montar("en");
+    const titulos = Array.from(contenedor.querySelectorAll("#documento h2[id]"));
+    expect(titulos.length).toBeGreaterThanOrEqual(8);
+
+    const texto = (contenedor.textContent ?? "").replace(/\s+/g, " ");
+    // Las mismas piezas que verifica la versión española, en inglés.
+    expect(texto).toContain("TTFT");
+    expect(texto).toContain("time to first token");
+    for (const tema of ["Prefix caching", "MoE", "tensor", "prefill"]) {
+      expect(texto.toLowerCase(), `falta la advertencia sobre ${tema}`).toContain(
+        tema.toLowerCase(),
+      );
+    }
+  });
+
+  it("la autoría y la cita siguen siendo las mismas, con el título en inglés", () => {
+    montar("en");
+    const texto = contenedor.textContent ?? "";
+    expect(texto).toContain("Shlomo Kalach");
+    expect(texto).toContain("Kalach, S. (2026)");
+    expect(texto).toContain("@misc{kalach2026mdi");
+    expect(texto).toContain(TEXTOS.en.meta.tituloCita);
+    expect(texto).not.toContain(TEXTOS.es.meta.tituloCita);
+  });
+
+  it("los números del motor no cambian con el idioma", () => {
+    montar("en");
+    const texto = contenedor.textContent ?? "";
+    // El motor es el mismo: mismos resultados que imprime `python motor.py`.
+    expect(texto).toContain("25.1 GB");
+    expect(texto).toContain("32 KB");
+    expect(texto).toContain("29.4 ms");
+
+    // El motivo de inviabilidad sí se traduce, pero NO tocando el que devuelve
+    // el motor: ese sigue siendo el de motor.py, palabra por palabra, y viaja al
+    // CSV. Lo que hace la página es rearmarlo en su idioma a partir de los mismos
+    // techos. Ver src/i18n/motivo.ts.
+    expect(texto).toContain(TEXTOS.en.motivo.sloInalcanzable("30", "L40S"));
+    expect(texto).not.toContain(TEXTOS.es.motivo.sloInalcanzable("30", "L40S"));
+  });
+
+  it("todos los enlaces internos apuntan a un id que existe", () => {
+    montar("en");
+    const ids = new Set(Array.from(contenedor.querySelectorAll("[id]")).map((e) => e.id));
+    const anclas = Array.from(contenedor.querySelectorAll('a[href^="#"]'))
+      .map((a) => (a.getAttribute("href") ?? "").slice(1))
+      .filter(Boolean);
+    expect(anclas.length).toBeGreaterThan(10);
+    for (const destino of anclas) {
+      expect(ids, `#${destino} no existe en la página inglesa`).toContain(destino);
+    }
+  });
+
+  it("el selector lleva a la otra versión y conserva query y ancla", () => {
+    montar("en");
+    const aEspanol = contenedor.querySelector('a[hreflang="es"]');
+    expect(aEspanol, "falta el enlace al español").not.toBeNull();
+    expect(aEspanol?.getAttribute("href")).toMatch(/^\/(\?|#|$)/);
+
+    act(() => raiz.unmount());
+    raiz = createRoot(contenedor);
+    montar("es");
+    const aIngles = contenedor.querySelector('a[hreflang="en"]');
+    expect(aIngles, "falta el enlace al inglés").not.toBeNull();
+    expect(aIngles?.getAttribute("href")).toMatch(/^\/en\//);
+  });
+});
+
+describe("el diccionario está completo", () => {
+  it("las dos versiones tienen exactamente las mismas claves", () => {
+    const rutas = (o: unknown, prefijo = ""): string[] => {
+      if (typeof o !== "object" || o === null) return [prefijo];
+      return Object.entries(o).flatMap(([k, v]) => rutas(v, prefijo ? `${prefijo}.${k}` : k));
+    };
+    expect(rutas(TEXTOS.en).sort()).toEqual(rutas(TEXTOS.es).sort());
+  });
+
+  it("ninguna cadena inglesa se quedó sin traducir", () => {
+    // Se comparan solo las cadenas: si una es idéntica en los dos idiomas suele
+    // ser un copy-paste olvidado. Se excluyen las que legítimamente coinciden.
+    const IGUALES_A_PROPOSITO = new Set([
+      "GPU", "GPUs", "VRAM", "TPOT", "USD/h", "TFLOPS", "Duty cycle", "tok",
+      "BibTeX", "MDI calculator", "—", "mem", "lat", "cpu", "Agents", "Models",
+      "Cache", "Name", "Lₐ", "H", "dₖ", "N (B)", "VRAM GB", "BW GB/s",
+      "VRAM (GB)", "Bandwidth (GB/s)",
+    ]);
+    const pares = (a: unknown, b: unknown, ruta = ""): string[] => {
+      if (typeof a === "string" && typeof b === "string") {
+        return a === b && !IGUALES_A_PROPOSITO.has(a) ? [`${ruta}: "${a}"`] : [];
+      }
+      if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return [];
+      return Object.keys(a).flatMap((k) =>
+        pares(
+          (a as Record<string, unknown>)[k],
+          (b as Record<string, unknown>)[k],
+          ruta ? `${ruta}.${k}` : k,
+        ),
+      );
+    };
+    const sospechosas = pares(TEXTOS.es, TEXTOS.en);
+    expect(sospechosas, "cadenas idénticas en los dos idiomas").toEqual([]);
   });
 });
 

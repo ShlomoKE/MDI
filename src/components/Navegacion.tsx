@@ -8,6 +8,8 @@
 
 import { useEffect, useState } from "react";
 
+import { useTextos } from "../i18n/contexto";
+
 interface Seccion {
   id: string;
   titulo: string;
@@ -17,6 +19,7 @@ interface Seccion {
 const LINEA_LECTURA = 120;
 
 export function Navegacion({ selector = "#documento h2[id]" }: { selector?: string }) {
+  const t = useTextos();
   const [secciones, setSecciones] = useState<Seccion[]>([]);
   const [activa, setActiva] = useState<string>("");
   const [abierto, setAbierto] = useState(false);
@@ -58,7 +61,7 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
 
   if (!secciones.length) return null;
 
-  const titulaActiva = secciones.find((s) => s.id === activa)?.titulo ?? "Contenido";
+  const titulaActiva = secciones.find((s) => s.id === activa)?.titulo ?? t.navegacion.contenido;
 
   return (
     <>
@@ -71,13 +74,16 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
           className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left"
         >
           <span className="min-w-0">
-            <span className="rotulo text-suave block">Sección</span>
+            <span className="rotulo text-suave block">{t.navegacion.seccion}</span>
             <span className="text-sm truncate block">{titulaActiva}</span>
           </span>
           <span className="text-suave text-xs shrink-0">{abierto ? "▲" : "▼"}</span>
         </button>
         {abierto && (
-          <nav className="border-t border-linea max-h-[60vh] overflow-y-auto" aria-label="Secciones">
+          <nav
+            className="border-t border-linea max-h-[60vh] overflow-y-auto"
+            aria-label={t.navegacion.secciones}
+          >
             <ol className="py-1">
               {secciones.map((s, i) => (
                 <li key={s.id}>
@@ -105,7 +111,7 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
               onClick={() => setAbierto(false)}
               className="flex items-center gap-2 px-4 py-3 text-sm border-t border-linea text-mem"
             >
-              Ir a la calculadora ↓
+              {t.navegacion.irCalculadora}
             </a>
           </nav>
         )}
@@ -114,9 +120,9 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
       {/* -------------------- Escritorio: columna pegada al lado -------------------- */}
       <nav
         className="hidden lg:block w-60 shrink-0 self-start sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto pr-4"
-        aria-label="Secciones"
+        aria-label={t.navegacion.secciones}
       >
-        <div className="rotulo text-suave mb-3">Contenido</div>
+        <div className="rotulo text-suave mb-3">{t.navegacion.contenido}</div>
         <ol className="border-l border-linea">
           {secciones.map((s, i) => {
             const act = activa === s.id;
@@ -145,7 +151,7 @@ export function Navegacion({ selector = "#documento h2[id]" }: { selector?: stri
           href="#calculadora"
           className="mt-3 inline-flex items-center gap-2 text-sm text-mem hover:underline"
         >
-          Ir a la calculadora ↓
+          {t.navegacion.irCalculadora}
         </a>
       </nav>
     </>

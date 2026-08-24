@@ -8,6 +8,8 @@
 
 import type { Cuello } from "../lib/motor";
 import { COLOR, fmt } from "../lib/formato";
+import { useTextos } from "../i18n/contexto";
+import { nombreCuello } from "../i18n/cuello";
 
 interface Props {
   G_mem: number;
@@ -18,13 +20,32 @@ interface Props {
   ancho?: number | string;
 }
 
-const FILAS: Array<{ k: Cuello; corto: string; largo: string; color: string }> = [
-  { k: "memoria", corto: "mem", largo: "memoria", color: COLOR.memoria },
-  { k: "latencia", corto: "lat", largo: "latencia", color: COLOR.latencia },
-  { k: "computo", corto: "cpu", largo: "cómputo", color: COLOR.computo },
-];
-
 export function BarrasPresion({ G_mem, G_lat, G_comp, cuello, ancho = 130 }: Props) {
+  const t = useTextos();
+
+  // Las filas se arman dentro del componente porque sus rótulos dependen del
+  // idioma. La clave `k` no: es el valor que devuelve el motor y no se traduce.
+  const FILAS: Array<{ k: Cuello; corto: string; largo: string; color: string }> = [
+    {
+      k: "memoria",
+      corto: t.barras.memCorto,
+      largo: nombreCuello(t, "memoria"),
+      color: COLOR.memoria,
+    },
+    {
+      k: "latencia",
+      corto: t.barras.latCorto,
+      largo: nombreCuello(t, "latencia"),
+      color: COLOR.latencia,
+    },
+    {
+      k: "computo",
+      corto: t.barras.compCorto,
+      largo: nombreCuello(t, "computo"),
+      color: COLOR.computo,
+    },
+  ];
+
   const valores: Record<Cuello, number> = {
     memoria: G_mem,
     latencia: G_lat,
@@ -52,7 +73,7 @@ export function BarrasPresion({ G_mem, G_lat, G_comp, cuello, ancho = 130 }: Pro
             <div
               className="flex-1 h-2 rounded bg-fondo min-w-8"
               role="img"
-              aria-label={`${largo}: ${fmt(v, 1)} GPUs`}
+              aria-label={t.barras.aria(largo, fmt(v, 1))}
             >
               <div
                 className="h-2 rounded transition-[width] duration-200"

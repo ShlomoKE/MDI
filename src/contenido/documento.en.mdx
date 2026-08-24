@@ -1,0 +1,570 @@
+import {
+  DiagramaCiclo,
+  DiagramaTechos,
+  DiagramaRegimenes,
+  DiagramaLote,
+} from "../components/Diagramas";
+import Cita from "../components/Cita";
+
+## What this is about
+
+**MDI** —the Inference Infrastructure Sizing Model for mixed human and agent
+loads— answers two symmetric questions: given a load, how much hardware it
+takes; and given the hardware, how much load it covers.
+
+Serving a language model is not a "how much GPU do I need" problem but a matter
+of three competing budgets: how many bytes fit in VRAM, how many bytes can be
+moved within the time the user tolerates, and how many multiplications fit in
+that same time. All three are evaluated on the same GPU, and the answer is
+always the most restrictive of the three.
+
+The **mixed loads** part is not decoration. A human and an agent are nowhere
+near the same unit of demand: the agent generates almost all the time and drags
+a context ten times larger. Treating them as the same thing is the mistake that
+leaves a sizing exercise short by an order of magnitude, and much of this
+document exists to put a number on that difference.
+
+The equations are derived here, and at the end sits the calculator that applies
+them. All the math runs in your browser: no server, nothing is sent anywhere,
+and the configuration you build travels in the URL so you can share it as a
+link.
+
+<div className="my-6">
+  <a href="#calculadora" className="inline-flex items-center gap-2 rounded border border-linea bg-superficie px-4 py-2 no-underline text-tinta hover:bg-fondo transition-colors">Jump to the calculator ↓</a>
+</div>
+
+> The math in this document and the math in the calculator are the same code.
+> The engine is written once in Python (`motor.py`, the source of truth) and
+> ported to TypeScript without changing a single formula; a test suite compares
+> the two, value by value, with exact floating-point equality.
+
+## Before the loop: prefill
+
+Every request goes through two phases that behave in opposite ways, and it pays
+to separate them before getting into the equations.
+
+The first is **prefill**: the model processes the entire prompt before emitting
+anything. All the input tokens go through in parallel, in a single matrix
+operation, and what comes out is not text but the **KV cache** that the second
+phase will consult at every step. For each prompt token, two vectors are
+computed and stored in every attention layer —a key, which says how that token
+announces itself to the ones that come after, and a value, which is the
+information it contributes when something attends to it—. That is where the
+factors of the $\mathrm{KV}_t$ that appears in everything below come from: the
+2 is key and value, and the rest is how many layers and of what size.
+
+Prefill is a compute problem, not a memory one: it processes thousands of
+tokens at once and saturates the Tensor Cores. Its metric is **TTFT** —*time to
+first token*, the time the user spends staring at an empty screen— and it
+scales with the length of the prompt:
+
+$$
+\mathrm{TTFT} \;=\; \frac{2 \cdot N \cdot 10^{9} \cdot T_{\text{in}}}{F}
+$$
+
+where $T_{\text{in}}$ is the number of prompt tokens and $F$ the effective
+FLOPS, the same ones the efficiency factor has already discounted.
+
+Decode is the opposite. It generates one token at a time, with nothing to
+parallelize, and at every step it reads the entire model from memory again. It
+is a bandwidth problem, and it is where nearly all the time in a response goes:
+a thousand-token prompt is processed in tens of milliseconds, while generating
+a thousand tokens takes several seconds.
+
+**The rest of this document is about decode**, because it is the phase that
+pins down the hardware. Prefill comes back later, in the limitations, where it
+competes for the same GPU that is decoding.
+
+## The decode loop
+
+An autoregressive model generates one token at a time. To produce the next one,
+the GPU has to do two things: **read** the model weights from memory and
+**multiply** the activation by them. Both happen at once, in different units of
+the chip, so the step takes as long as the slower of the two.
+
+The metric the user cares about is **TPOT** — *time per output token*, the gap
+between two consecutive tokens on screen. A TPOT of 30 ms is about 33 tokens
+per second, roughly twice as fast as comfortable reading.
+
+<DiagramaCiclo />
+
+In a decode step with batch $B$ and average context $C$ per sequence, the
+memory traffic is:
+
+$$
+\text{bytes per step} \;=\; \underbrace{P_m}_{\text{weights}} \;+\; \underbrace{B \cdot C \cdot \mathrm{KV}_t}_{\text{cache}}
+$$
+
+and the arithmetic work, counting two operations — one multiply and one add —
+per parameter and per sequence:
+
+$$
+\text{FLOP per step} \;=\; 2 \cdot N \cdot 10^{9} \cdot B
+$$
+
+where **$N$ is in billions of parameters** — the convention of the code and of
+the catalogs, where Qwen3.5-27B is `N = 27`, not `N = 27000000000`. That is why
+the $10^{9}$ factor appears explicitly in **every** compute equation from here
+on: without it they are not dimensionally correct.
+
+Dividing each one by the resource it consumes:
+
+$$
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + B \cdot C \cdot \mathrm{KV}_t}{W},\; \frac{2 N 10^{9} B}{F} \right)
+$$
+
+where $W$ is the effective bandwidth in bytes/s and $F$ the effective FLOPS. It
+is a maximum, not a sum: the two paths advance in parallel.
+
+### The theoretical floor
+
+If the batch is a single sequence and the context is negligible, the cache term
+vanishes and what remains is the most useful number in the whole analysis:
+
+$$
+\mathrm{TPOT}_{\min} \;=\; \frac{P_m}{W}
+$$
+
+A 27-billion-parameter model in fp8 weighs 27 GB. On an H100 SXM with 3350 GB/s
+nominal and an efficiency factor of 0.5 — that is, 1675 GB/s in practice — the
+floor is around 16 ms per token. **No configuration, no batch, no serving
+optimization is going below that without changing the model, the quantization,
+or the hardware.** Everything else in this document is how much that floor
+degrades as load is added.
+
+## What fills the VRAM
+
+Two big things and one medium-sized one.
+
+**The weights.** The entire model has to be resident. Its size depends on the
+quantization, $b_w$ bytes per parameter:
+
+$$
+P_m \;=\; N \cdot 10^{9} \cdot b_w
+$$
+
+**The KV cache.** For every token that has already gone through the model, two
+vectors — key and value — have to be stored in each layer that does attention.
+The cost per token of context is:
+
+$$
+\mathrm{KV}_t \;=\; 2 \cdot L_a \cdot H \cdot d_k \cdot b_{kv}
+$$
+
+The factor of 2 is key and value. $L_a$ is **the layers that generate cache,
+not the total**: hybrid architectures interleave attention layers with layers
+that are not, and that is where almost all the difference between two models of
+the same size lives. $H$ is the KV heads, which with *grouped-query attention*
+are far fewer than the query heads, and $d_k$ the dimension per head.
+
+The difference is brutal. A dense 27B with 46 attention layers and GQA 8×128
+spends 92 KB per token of context in fp8. A hybrid 27B with 16 attention layers
+and 4 heads of 256 spends 32 KB in fp8 — almost three times less. At 30,000
+tokens of context that is the difference between 2.6 GB and 0.9 GB **per
+session**.
+
+**Engine overhead.** Activation buffers, CUDA graphs, the scheduler,
+fragmentation in the block allocator. A couple of gigabytes you never get back;
+in the equations it shows up as $O$.
+
+What is left over is the only thing that can go to the cache:
+
+$$
+\mathrm{KV}_{\max}^{\text{mem}} \;=\; V_t - P_m - O
+$$
+
+## The three constraints
+
+This is where the problem gets interesting. There are three ceilings and they
+act on different things.
+
+<DiagramaTechos />
+
+**Memory.** The cache bytes that physically fit, with the weights and the
+overhead already subtracted:
+
+$$
+\mathrm{KV}_{\max}^{\text{mem}} \;=\; V_t - P_m - O
+$$
+
+If this comes out negative, the model does not fit on that GPU and there is
+nothing to discuss.
+
+**Latency.** The SLO bounds how many bytes can be read per step. The weights
+have already eaten $P_m$ of that budget; what is left goes to the cache:
+
+$$
+\mathrm{KV}_{\max}^{\text{lat}} \;=\; \mathrm{SLO} \cdot W - P_m
+$$
+
+If this comes out negative, the SLO is unreachable on that GPU even with VRAM
+to spare: reading the weights alone no longer fits in the time asked for.
+
+**Compute.** The third ceiling does not bound bytes but **sequences**. The
+largest batch the Tensor Cores sustain within the SLO is:
+
+$$
+B_{\text{comp}} \;=\; \frac{\mathrm{SLO} \cdot F}{2 N \cdot 10^{9}}
+$$
+
+Note that the first two ceilings are measured in cache bytes and the third in
+number of sequences. That is why they cannot be added or averaged: each one is
+compared against demand in its own unit, and only then is the worst taken.
+
+## The batch and why it comes almost free
+
+The weights are read **once per step**, no matter how many sequences are in the
+batch. The cache, on the other hand, is paid per sequence.
+
+<DiagramaLote />
+
+Per useful token generated, the cost is:
+
+$$
+\frac{\text{bytes}}{\text{token}} \;=\; \frac{P_m}{B} \;+\; C \cdot \mathrm{KV}_t
+$$
+
+The first term dilutes with the batch; the second does not. With short contexts
+the system operates in the zone where the weights dominate and adding sessions
+is almost free: that is the entire economics of served inference. With long
+contexts the second term rules and every new session costs full price.
+
+That is why context is the variable that moves the result most, more than the
+number of users. Doubling the users doubles the cache demand; doubling the
+context does too, but it also pushes the system toward the regime where the
+batch no longer helps.
+
+## How much load there really is
+
+A registered user consumes nothing while reading. What counts is how many
+sessions are **generating** at any given instant. Each population is described
+by three numbers: how many there are ($U$), what fraction of the time they
+generate ($D$, the *duty cycle*), and how much context they drag along ($C$).
+
+$$
+A \;=\; U \cdot D
+$$
+
+With two populations — humans and agents — the total cache demand is:
+
+$$
+\mathrm{KV}_{\text{total}} \;=\; \mathrm{KV}_t \cdot \left( U_h D_h C_h + U_a D_a C_a \right)
+$$
+
+The difference between the two populations is not one of degree but of kind. A
+human types, waits, reads, gets distracted: generating maybe 15% of the time,
+with a few thousand tokens of context. An agent chains tool calls with no human
+pauses and drags along the entire conversation plus the results of every tool:
+it can be generating 95% of the time carrying tens of thousands of tokens.
+
+### κ — what an agent costs in users
+
+The ratio between what an agent costs and what a user costs is:
+
+$$
+\kappa \;=\; \frac{D_a \cdot C_a}{D_h \cdot C_h}
+$$
+
+With the default values — 15% and 3,000 tokens against 95% and 30,000 — a
+single agent is worth **63 users**. That is the number to keep in your head
+when planning: forty coding agents weigh more than two thousand people using a
+chat.
+
+$\kappa$ is also the slope of the trade-off frontier in capacity mode: every
+agent added to the plan evicts $\kappa$ users.
+
+## Sizing mode: how many GPUs it takes
+
+Given the load, each constraint independently demands a minimum number of GPUs.
+The first two divide up cache bytes; the third divides up sequences.
+
+$$
+G_{\text{mem}} = \frac{\mathrm{KV}_{\text{total}}}{V_t - P_m - O}
+\qquad
+G_{\text{lat}} = \frac{\mathrm{KV}_{\text{total}}}{\mathrm{SLO} \cdot W - P_m}
+\qquad
+G_{\text{comp}} = \frac{A}{B_{\text{comp}}}
+$$
+
+The result is the worst of the three, rounded up and with a floor of one unit:
+
+$$
+G \;=\; \max\!\left(1,\; \left\lceil \max\left(G_{\text{mem}},\, G_{\text{lat}},\, G_{\text{comp}}\right) \right\rceil \right)
+$$
+
+Reporting **which of the three dominates** matters as much as the number,
+because it determines what to do about it. If memory rules, you want more VRAM
+or less context. If latency rules, you want more bandwidth — and adding VRAM
+does nothing at all. If compute rules, the batch has saturated the Tensor Cores
+and only a smaller model or more units helps.
+
+With $G$ decided, the actual batch per GPU is $B = A / G$ and the TPOT you
+actually get comes out of the same equation as at the start:
+
+$$
+\mathrm{TPOT} \;=\; \max\!\left( \frac{P_m + \mathrm{KV}_{\text{total}} / G}{W},\; \frac{2 N 10^{9} B}{F} \right)
+$$
+
+That TPOT usually lands **below** the SLO, because rounding up hands you
+headroom. That headroom is real and can be spent on context, on users, or on
+sleeping at night.
+
+## Capacity mode: how much load it covers
+
+The inverse question is more common than it seems: the hardware is already
+bought and what you want to know is how many people you can promise service to.
+
+You fix $G$ units and a number of agents, and solve for how many humans fit on
+top. The available byte ceiling is the lower of the two byte ceilings,
+multiplied by the units:
+
+$$
+\mathrm{KV}_{\text{avail}} \;=\; G \cdot \min\!\left( \mathrm{KV}_{\max}^{\text{mem}},\; \mathrm{KV}_{\max}^{\text{lat}} \right)
+$$
+
+Subtracting what the agents already took and dividing by what one registered
+user costs:
+
+$$
+U_h \;\le\; \frac{\mathrm{KV}_{\text{avail}} - U_a \cdot \mathrm{KV}_t D_a C_a}{\mathrm{KV}_t D_h C_h}
+$$
+
+And in parallel, the compute constraint on that same split:
+
+$$
+U_h \;\le\; \frac{G \cdot B_{\text{comp}} - U_a D_a}{D_h}
+$$
+
+The result is the smaller of the two. If the agents alone already do not fit,
+there are no users to add and the configuration simply is not enough.
+
+The two modes share the same core: they are the same inequality solved for
+different unknowns. If sizing returns $G$ for a load, capacity with that same
+$G$ has to admit that load — and the engine's tests check exactly that across
+the whole catalog.
+
+## Regimes and crossovers
+
+Which constraint rules is not a property of the hardware: **it depends on the
+context**. With short contexts the cache is negligible and the system is a
+compute problem. As the context grows, the cache starts to dominate the traffic
+and the bottleneck migrates toward latency, and then toward memory.
+
+<DiagramaRegimenes />
+
+Careful how you read that: **there are two regimes, not three**. Which of the
+two byte ceilings rules —memory or latency— does not depend on the context at
+all, so the system moves from compute to whichever byte ceiling is tighter and
+stays there. The two crossovers below are the same jump measured against each
+ceiling; the one that happens first is the real one, and the other sits behind
+it changing nothing.
+
+The crossovers come from setting the constraints equal in pairs. Compute
+against latency:
+
+$$
+C_{\text{eq}1} \;=\; \frac{\left(\mathrm{SLO} \cdot W - P_m\right) \cdot 2 N \cdot 10^{9}}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+$$
+
+And compute against memory:
+
+$$
+C_{\text{eq}3} \;=\; \frac{\left(V_t - P_m - O\right) \cdot 2 N \cdot 10^{9}}{\mathrm{SLO} \cdot F \cdot \mathrm{KV}_t}
+$$
+
+The $10^{9}$ is the same one as always: $N$ is in billions of parameters, so
+every time parameters are turned into FLOP that scale has to be undone. Without
+it the crossovers land on the order of a millionth of a token instead of the
+~1,300 the calculator gives, which is a good way to check it is in the right
+place.
+
+The crossover between memory and latency is direct, because both ceilings bound
+bytes: memory rules when $V_t - P_m - O \le \mathrm{SLO} \cdot W - P_m$, that
+is, when the VRAM runs out before the time budget does. That regime does not
+depend on the context at all — it is a property of the GPU against the SLO.
+
+There are also two absolute ceilings that no amount of added sessions can beat:
+
+$$
+\left.\frac{\text{tok}}{\text{s}}\right|_{\text{memory}} = \frac{W}{\mathrm{KV}_t \cdot C}
+\qquad
+\left.\frac{\text{tok}}{\text{s}}\right|_{\text{compute}} = \frac{F}{2 N \cdot 10^{9}}
+$$
+
+The first falls linearly with the context. The second does not depend on the
+context at all. Where they cross is another way of seeing where the boundary
+between regimes sits.
+
+## The efficiency factor
+
+Everything above comes out optimistic, and by considerably more than a margin
+of error. The reasons are well known and none of them is a flaw in the model:
+
+- The cache competes for the same bandwidth as the weights, and the access is
+  not perfectly sequential.
+- There is kernel-launch overhead between layers.
+- The inference engine's *scheduler* does not keep the batch full all the time:
+  sequences come and go.
+- The vendor's nominal bandwidth is measured under conditions that a real
+  inference engine does not reproduce.
+
+Rather than model each effect separately, the engine folds them into a single
+factor $\eta$ that discounts **both the bandwidth and the FLOPS**:
+
+$$
+W = \eta \cdot W_{\text{nominal}}
+\qquad
+F = \eta \cdot F_{\text{nominal}}
+$$
+
+The default, $\eta = 0.5$, is what public benchmarks on large models back up:
+half of nominal, that is, a real TPOT on the order of twice the theoretical
+one. It is a parameter, not a physical constant: **if you have a real
+measurement from your inference engine, use it**. It is the knob that changes
+the result most after context.
+
+## How to read the calculator
+
+In **sizing** mode each point on the chart is a GPU: on the horizontal axis the
+TPOT it achieves, on the vertical what the number of units required costs per
+hour. The band on the right is the zone that violates the SLO. The dotted line
+joins the Pareto front — off it there is always a better option in both
+dimensions at once.
+
+The pressure bars in the table show how many GPUs each constraint demands on
+its own. The filled bar is the one that sets the total; the other two, dimmed,
+are the headroom left over.
+
+In **capacity** mode each curve is a GPU. Every point on it saturates the
+system, so there is no single optimum: it is the real trade-off between serving
+agents and serving users, and the slope is $\kappa$. The elbow that shows up in
+some curves is the point where the bottleneck switches from bytes to compute.
+
+The colors are consistent across the site: **pine green** when memory rules,
+**burnt orange** when latency rules, **blue** when compute rules.
+
+## Limitations
+
+This model is a first-order bound, useful for deciding the order of magnitude
+of the hardware and for understanding which constraint rules. It is not a
+simulator. Here is what it does **not** account for, in rough order of impact:
+
+**Prefix caching.** The calculation assumes every session has its own complete
+cache. In practice, agents that share a system prompt —or the same repository
+loaded into context— can reuse the prefix across sessions, and the saving is
+enormous: what gets shared is exactly the $C_a$ term, and that is the dominant
+term. **With prefix caching on, this calculation oversizes**, sometimes by a
+considerable factor.
+
+**MoE models.** The compute formula and the weight-traffic formula both assume
+that **all** the parameters are read and used at every token. In a mixture of
+experts only a fraction activates, so $N$ ought to be the active parameter
+count for compute and the total for VRAM: two different numbers, and here there
+is only one. For an MoE, this model does not apply without modifying it.
+
+**Tensor parallelism.** A full replica of the model per GPU is assumed. With
+tensor parallelism the weights are split across several units, which changes
+both $P_m$ per GPU and the traffic pattern —and adds inter-GPU communication,
+which appears nowhere here.
+
+**Demand variability.** The whole calculation uses averages: average duty
+cycle, average context. Real demand arrives in bursts, and a queue sized to the
+average saturates at the peak. **Peaks require headroom**, and how much is a
+decision this model does not make for you.
+
+**Chunked prefill and the effect of prefill on decode.** Processing the initial
+prompt is a compute-bound operation, not a memory-bound one, and it competes
+for the same GPU that is decoding. Modern engines interleave chunks of prefill
+between decode steps, which degrades the TPOT of the active sessions in a way
+that is not modeled here at all.
+
+On top of that, two warnings about the default values:
+
+- **The duty cycles are pinned to the worst case** and are deliberately not
+  editable: 0.15 for humans and 0.95 for agents. Real traces from coding agents
+  look more like ~0.42 —thirteen seconds generating for every eighteen in
+  tools—; 0.95 corresponds to an agent with very fast tools. If your agents
+  look more like the first figure, the sizing comes out generous.
+- **The prices are indicative.** They are meant to represent amortized CAPEX
+  plus OPEX, they vary wildly across providers and regions, and they are
+  editable in the table precisely because there is no correct number. Do not
+  use them as a quote.
+
+All that said: the model gets right what matters for deciding. Which constraint
+rules, what order of magnitude of hardware it takes, and what each agent added
+to the plan costs in users.
+
+## References
+
+The constraints MDI formalizes are each documented in the literature
+separately, and more rigorous treatments of the capacity problem do exist
+—notably the queueing-theory approaches, which model the arrival of requests
+instead of populations. MDI does not compete with them: it adopts a
+deliberately operational parameterization (how many users, how much context,
+what fraction of the time they generate) because those are the numbers a team
+has on hand before buying hardware, and because it makes explicit the trade-off
+between populations that aggregate models leave implicit.
+
+### Architecture
+
+<div className="referencias">
+
+- **[1]** Vaswani, A. et al. (2017). *Attention Is All You Need*. NeurIPS.
+- **[2]** Su, J. et al. (2021). *RoFormer: Enhanced Transformer with Rotary Position Embedding*. [arXiv:2104.09864](https://arxiv.org/abs/2104.09864).
+- **[3]** Ainslie, J. et al. (2023). *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245).
+- **[4]** Sennrich, R., Haddow, B. & Birch, A. (2016). *Neural Machine Translation of Rare Words with Subword Units*. ACL.
+- **[5]** Holtzman, A. et al. (2020). *The Curious Case of Neural Text Degeneration*. ICLR.
+
+</div>
+
+### Inference and serving
+
+<div className="referencias">
+
+- **[6]** Pope, R. et al. (2022). *Efficiently Scaling Transformer Inference*. [arXiv:2211.05102](https://arxiv.org/abs/2211.05102).
+- **[7]** Yu, G.-I. et al. (2022). *Orca: A Distributed Serving System for Transformer-Based Generative Models*. OSDI.
+- **[8]** Kwon, W. et al. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. SOSP.
+- **[9]** Dao, T. et al. (2022). *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. [arXiv:2205.14135](https://arxiv.org/abs/2205.14135).
+
+</div>
+
+### Measurements and benchmarks
+
+<div className="referencias">
+
+- **[10]** *FlashFormer: Whole-Model Kernels for Efficient Low-Batch Inference*. [arXiv:2505.22758](https://arxiv.org/abs/2505.22758).
+- **[11]** LMSYS. *NVIDIA DGX Spark review*. [lmsys.org](https://lmsys.org)
+- **[12]** GeneralCompute. *GeneralCompute vs vLLM: Throughput, Latency, and Cost Benchmarks* (2026). [generalcompute.com](https://www.generalcompute.com/blog/generalcompute-vs-vllm-throughput-latency-and-cost-benchmarks)
+- **[13]** vLLM. *The State of FP8 KV-Cache and Attention Quantization in vLLM* (2026). [vllm-project.github.io](https://vllm-project.github.io/2026/04/22/fp8-kvcache.html)
+
+</div>
+
+### Queueing theory
+
+<div className="referencias">
+
+- **[14]** *A Queueing-Theoretic Framework for Stability Analysis of LLM Inference with KV Cache Memory Constraints*. [arXiv:2605.04595](https://arxiv.org/abs/2605.04595).
+- **[15]** Related work: [arXiv:2605.04595](https://arxiv.org/abs/2605.04595), [arXiv:2606.15555](https://arxiv.org/abs/2606.15555) and [arXiv:2605.26297](https://arxiv.org/abs/2605.26297).
+
+</div>
+
+### Technical documentation
+
+<div className="referencias">
+
+- Qwen. *Qwen3.5-27B*. HuggingFace / ModelScope.
+- NVIDIA. *DGX Spark technical specifications*.
+
+</div>
+
+## How to cite
+
+MDI is a proposal by **Shlomo Kalach**. The model, the derivation of the
+equations, and the three-constraint criterion are his; if they are useful to
+you for a report, a thesis, or a purchase decision that has to be justified in
+writing, here are the formats ready to paste.
+
+<Cita />
+
+The repository also ships a `CITATION.cff`, so GitHub offers the **Cite this
+repository** button with the same data.

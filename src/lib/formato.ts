@@ -40,10 +40,6 @@ export const enMs = (segundos: number, d = 1): string => fmt(segundos * 1000, d)
 export const usd = (n: number, d = 2): string =>
   Number.isFinite(n) ? "$" + fmt(n, d) : "—";
 
-/** Los nombres del motor son sin acento; los de pantalla, con. */
-export const nombreCuello = (k: Cuello | "" | null): string =>
-  k === "memoria" ? "memoria" : k === "latencia" ? "latencia" : k === "computo" ? "cómputo" : "—";
-
 /** Las clases de Tailwind por restricción, para no repetir el mapeo. */
 export const CLASE_CUELLO: Record<Cuello, { texto: string; fondo: string; borde: string }> = {
   memoria: { texto: "text-mem", fondo: "bg-mem-tenue", borde: "border-mem" },
