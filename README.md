@@ -3,6 +3,12 @@
 Para cargas mixtas de usuarios y agentes.
 **Una propuesta de Shlomo Kalach**, 2026.
 
+### → **[Leer MDI](https://mdi.kesheratmex.workers.dev/)** · **[Read it in English](https://mdi.kesheratmex.workers.dev/en/)**
+
+El documento completo y la calculadora están en el sitio. Este README explica
+**qué** es MDI y enseña las ecuaciones; el **porqué** —la derivación, los
+diagramas, los regímenes— está allí.
+
 *[Read this in English → `README.en.md`](README.en.md)*
 
 ## Qué es esto
@@ -403,57 +409,6 @@ que se leyó, y la cita apunta a la versión correcta.
   el motivo por el que una GPU no sirve— **no se traducen nunca**: son datos,
   viajan al CSV y los comparan las pruebas de paridad. Lo que se traduce es cómo
   se muestran. Ver `src/i18n/motivo.ts`.
-
-**Al desplegar, define `MDI_ORIGEN` con el dominio final** en las variables de
-entorno del proyecto:
-
-```
-MDI_ORIGEN=https://tu-dominio.com
-```
-
-De ahí salen `canonical` y `hreflang`, que enlazan las dos versiones para los
-buscadores. Exigen URLs absolutas, así que sin dominio no se emiten: es
-preferible no decir nada a decirlo mal —medido, emitirlos relativos costaba 17
-puntos de SEO—.
-
-## Despliegue en Cloudflare
-
-El sitio se publica con **Workers Static Assets**: cada push a `main` dispara un
-despliegue automático. No hay código de Worker, solo los archivos que
-`npm run build` deja en `dist/`.
-
-| Campo | Valor |
-| --- | --- |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
-| Node version | 22 — ya fijada por `.node-version` y por `engines` en `package.json` |
-
-Los pasos, una sola vez: panel de Cloudflare → **Workers & Pages** → **Create** →
-**Import a repository**; autoriza GitHub, elige este repositorio, deja el build
-command y despliega.
-
-> **Si el repositorio no aparece en la lista**, casi siempre es una de dos cosas.
-> La primera: la app de GitHub de Cloudflare se instala con acceso a
-> *repositorios seleccionados*, y un repo recién creado no entra solo — se
-> arregla en <https://github.com/settings/installations> → la app de Cloudflare →
-> *Repository access*. La segunda: tener varias cuentas de GitHub y estar mirando
-> la que no es; el desplegable de cuenta en Cloudflare tiene que ser la dueña del
-> repositorio.
-
-`public/_headers` acaba en `dist/_headers`, y Static Assets lo interpreta: de ahí
-salen el cacheado de los assets con hash, las cabeceras de seguridad y una CSP
-que le prohíbe a la página hablar con el exterior —cosa que no necesita hacer,
-porque calcula todo localmente—. Ojo con una línea suya: `font-src` necesita
-`data:` porque Vite incrusta una de las fuentes de KaTeX como data: URI, y sin
-eso las ecuaciones con paréntesis grandes se quedan en blanco **solo en
-producción** (`vite preview` no aplica `_headers`).
-
-**Si prefieres Cloudflare Pages**, funciona igual pero es otro tipo de proyecto:
-sustituye el bloque `[assets]` de `wrangler.toml` por
-`pages_build_output_dir = "dist"` y crea el proyecto desde **Workers & Pages** →
-**Create** → **Pages** → **Connect to Git**, con build `npm run build` y
-directorio de salida `dist`. Pages no ejecuta un deploy command: publica `dist`
-directamente.
 
 ## Lo que el modelo no contempla
 

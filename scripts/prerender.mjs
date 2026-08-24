@@ -26,17 +26,20 @@ const MARCA_HEAD_INICIO = "<!-- i18n:head:inicio -->";
 const MARCA_HEAD_FIN = "<!-- i18n:head:fin -->";
 
 /**
- * El dominio final, si se conoce en tiempo de build.
+ * Dónde vive el sitio publicado.
  *
- * `canonical` y `hreflang` EXIGEN URLs absolutas: con rutas relativas los
- * buscadores las ignoran y Lighthouse las marca como inválidas —medido, la
- * puntuación de SEO caía de 100 a 83—. Como no se puede inventar el dominio,
- * sin origen no se emiten: es preferible no decir nada a decirlo mal.
+ * De aquí salen `canonical` y `hreflang`, que son los que le dicen a un buscador
+ * que la página española y la inglesa son la misma cosa en dos idiomas. Exigen
+ * URLs absolutas: con rutas relativas los buscadores las ignoran y Lighthouse
+ * las marca como inválidas —medido, la puntuación de SEO caía de 100 a 83—.
  *
- * Se define en las variables de entorno del proyecto en Cloudflare, o a mano:
- *   MDI_ORIGEN=https://mdi.ejemplo.com npm run build
+ * `MDI_ORIGEN` lo sobrescribe si alguna vez hace falta construir para otro
+ * dominio (una vista previa, un espejo). No hay que definirlo para nada normal.
  */
-const ORIGEN = (process.env.MDI_ORIGEN || process.env.CF_PAGES_URL || "").replace(/\/+$/, "");
+const ORIGEN = (process.env.MDI_ORIGEN || "https://mdi.kesheratmex.workers.dev").replace(
+  /\/+$/,
+  "",
+);
 const url = (ruta) => ORIGEN + ruta;
 
 /**
@@ -93,16 +96,10 @@ function cabecera(idioma, textos) {
     `    <meta property="og:description" content="${escapar(m.descripcionCorta)}" />`,
     `    <meta property="og:locale" content="${idioma === "es" ? "es_MX" : "en_US"}" />`,
     ``,
-    // Solo con el dominio conocido; ver la nota de ORIGEN. Emitirlos relativos
-    // no es "menos preciso": es inválido, y cuesta 17 puntos de SEO.
-    ...(ORIGEN
-      ? [
-          `    <link rel="canonical" href="${url(canonica)}" />`,
-          `    <link rel="alternate" hreflang="es" href="${url("/")}" />`,
-          `    <link rel="alternate" hreflang="en" href="${url("/en/")}" />`,
-          `    <link rel="alternate" hreflang="x-default" href="${url("/")}" />`,
-        ]
-      : []),
+    `    <link rel="canonical" href="${url(canonica)}" />`,
+    `    <link rel="alternate" hreflang="es" href="${url("/")}" />`,
+    `    <link rel="alternate" hreflang="en" href="${url("/en/")}" />`,
+    `    <link rel="alternate" hreflang="x-default" href="${url("/")}" />`,
   ].join("\n");
 }
 
@@ -149,9 +146,4 @@ for (const { idioma, destino } of PAGINAS) {
 // El build de servidor solo existía para esto.
 rmSync("dist-ssr", { recursive: true, force: true });
 
-console.log(
-  `Prerenderizado: ${PAGINAS.length} páginas` +
-    (ORIGEN
-      ? ` con canonical y hreflang en ${ORIGEN}`
-      : " sin canonical ni hreflang: define MDI_ORIGEN con el dominio para emitirlos"),
-);
+console.log(`Prerenderizado: ${PAGINAS.length} páginas en ${ORIGEN}`);

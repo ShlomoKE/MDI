@@ -3,6 +3,12 @@
 For mixed human and agent loads.
 **A proposal by Shlomo Kalach**, 2026.
 
+### → **[Read MDI](https://mdi.kesheratmex.workers.dev/en/)** · **[Leer en español](https://mdi.kesheratmex.workers.dev/)**
+
+The full document and the calculator live on the site. This README explains
+**what** MDI is and lays out the equations; the **why** —the derivation, the
+diagrams, the regimes— is over there.
+
 *[Léelo en español → `README.md`](README.md)*
 
 ## What this is
@@ -403,57 +409,6 @@ points at the right version.
   reason a GPU does not work— are **never translated**: they are data, they go
   into the CSV and the parity tests compare them. What gets translated is how
   they are displayed. See `src/i18n/motivo.ts`.
-
-**When deploying, set `MDI_ORIGEN` to the final domain** in the project's
-environment variables:
-
-```
-MDI_ORIGEN=https://your-domain.com
-```
-
-That is where `canonical` and `hreflang` come from, linking the two versions for
-search engines. They require absolute URLs, so without a domain they are not
-emitted at all: better to say nothing than to say it wrong — measured, emitting
-them relative cost 17 SEO points.
-
-## Deploying on Cloudflare
-
-The site is published with **Workers Static Assets**: every push to `main`
-triggers an automatic deploy. There is no Worker code, only the files
-`npm run build` leaves in `dist/`.
-
-| Field | Value |
-| --- | --- |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
-| Node version | 22 — already pinned by `.node-version` and by `engines` in `package.json` |
-
-The steps, once and once only: Cloudflare dashboard → **Workers & Pages** →
-**Create** → **Import a repository**; authorize GitHub, pick this repository,
-leave the build command alone and deploy.
-
-> **If the repository does not show up in the list**, it is almost always one of
-> two things. First: Cloudflare's GitHub app is installed with access to
-> *selected repositories*, and a freshly created repo does not join on its own —
-> fix it at <https://github.com/settings/installations> → the Cloudflare app →
-> *Repository access*. Second: having several GitHub accounts and looking at the
-> wrong one; the account dropdown in Cloudflare has to be the owner of the
-> repository.
-
-`public/_headers` ends up as `dist/_headers`, and Static Assets interprets it:
-that is where the caching of hashed assets, the security headers and a CSP that
-forbids the page from talking to the outside come from —something it never needs
-to do, since it computes everything locally—. Watch out for one line of it:
-`font-src` needs `data:` because Vite inlines one of the KaTeX fonts as a data:
-URI, and without that the equations with large parentheses come out blank **only
-in production** (`vite preview` does not apply `_headers`).
-
-**If you prefer Cloudflare Pages**, it works the same way but it is a different
-kind of project: replace the `[assets]` block in `wrangler.toml` with
-`pages_build_output_dir = "dist"` and create the project from **Workers & Pages**
-→ **Create** → **Pages** → **Connect to Git**, with build `npm run build` and
-output directory `dist`. Pages does not run a deploy command: it publishes `dist`
-directly.
 
 ## What the model does not account for
 
