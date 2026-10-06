@@ -35,7 +35,6 @@ interface Props {
   /** Hace falta para rearmar el motivo de inviabilidad en el idioma vigente. */
   modeloNombre: string;
   slo_ms: number;
-  G: number;
   mejorId: string | null;
   foco: string | null;
   setFoco: (id: string | null) => void;
@@ -93,7 +92,7 @@ function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => voi
 }
 
 export function TablaGPUs(p: Props) {
-  const { filas, modo, vista, modeloNombre, slo_ms, G, mejorId, foco, setFoco } = p;
+  const { filas, modo, vista, modeloNombre, slo_ms, mejorId, foco, setFoco } = p;
   const t = useTextos();
   const dim = modo === "dimensionar";
   const etiquetaMejor = dim ? t.tabla.masBarata : t.tabla.masCapacidad;
@@ -103,6 +102,14 @@ export function TablaGPUs(p: Props) {
   const colPrimera =
     vista === "gpus" ? t.tabla.colGPU : vista === "chasis" ? t.tabla.colChasis : t.tabla.colHardware;
   const colCuantas = vista === "gpus" ? t.tabla.colGPUs : t.tabla.colUnidades;
+
+  // Lo que se dice junto al nombre de un chasis. En capacidad, con GPUs y chasis
+  // en la misma tabla, el chasis se redondea hacia arriba hasta cubrir las GPUs
+  // fijadas: aquí se ve a cuántos chasis (y a cuántas GPUs) llegó ese redondeo.
+  const etiquetaDe = (f: Fila): string =>
+    !dim && vista === "ambos"
+      ? t.tabla.etiquetaChasisCap(f.unidadesCap, f.gpu.n)
+      : t.tabla.etiquetaChasis(f.gpu.n);
 
   // Los encabezados se arman aquí dentro: son texto de interfaz y cambian con
   // el idioma, así que ya no pueden vivir como constantes del módulo.
@@ -195,7 +202,7 @@ export function TablaGPUs(p: Props) {
                         <span className={esMejor ? "font-semibold" : ""}>{f.gpu.nombre}</span>
                         {esChasis(f.gpu) && (
                           <span className="block text-xs text-suave whitespace-nowrap">
-                            {t.tabla.etiquetaChasis(f.gpu.n)}
+                            {etiquetaDe(f)}
                           </span>
                         )}
                       </div>
@@ -341,7 +348,7 @@ export function TablaGPUs(p: Props) {
                   </span>
                   {esChasis(f.gpu) && (
                     <span className="text-xs text-suave whitespace-nowrap">
-                      {t.tabla.etiquetaChasis(f.gpu.n)}
+                      {etiquetaDe(f)}
                     </span>
                   )}
                 </label>
@@ -406,7 +413,10 @@ export function TablaGPUs(p: Props) {
                     <>
                       <Dato
                         k={t.tabla.usuariosCon(
-                          t.calculadora.unidades(esChasis(f.gpu) ? "chasis" : "gpus", String(G)),
+                          t.calculadora.unidades(
+                            esChasis(f.gpu) ? "chasis" : "gpus",
+                            String(f.unidadesCap),
+                          ),
                         )}
                         v={f.cap.alcanza ? fmt(f.cap.usuarios) : t.tabla.noAlcanza}
                         clase={f.cap.alcanza ? "text-mem" : "text-lat"}

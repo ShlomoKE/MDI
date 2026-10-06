@@ -227,9 +227,13 @@ $$
 **The equations above do not change: what changes is the parameters they are
 fed.** A chassis is a unit of $n$ GPUs serving one single replica with tensor
 parallelism, so the resources add up and the engine overhead is paid per GPU. $G$
-now counts chassis, and the cost is $G$ times the price of the whole chassis.
-$\sigma$ is the fraction of the aggregate bandwidth and FLOPS that survives
-inter-GPU communication: an assumption, not a measurement, although
+now counts chassis, and the cost is $G$ times the price of the whole chassis. The
+calculator starts by comparing single GPUs and chassis in the same table and on
+the same charts —circles for GPUs, squares for chassis— and a selector shows each
+class on its own; when they are compared together in capacity mode, $G$ counts
+GPUs and the chassis, which is only bought whole, rounds up. $\sigma$ is the
+fraction of the aggregate bandwidth and FLOPS that survives inter-GPU
+communication: an assumption, not a measurement, although
 `scripts/estimar_sigma.py` shows where each value comes from. The hourly price of
 each chassis comes from its list price through an explicit rule (`horaria`, in
 `src/lib/catalogos.ts`), and each one carries its source, its power draw and its
@@ -300,8 +304,10 @@ tests again**. The calculator starts up in exactly the scenario that
 of overhead, efficiency 0.5— so the two can be compared without touching a single
 field.
 
-The tests are split across three files: `motor.test.ts` (parity with Python and
-model invariants), `formato.test.ts` (the SVG palette tied to the CSS tokens and
+The tests are split across five files: `motor.test.ts` (parity with Python and
+model invariants), `resultados.test.ts` (what is compared and with how many units
+in capacity mode), `etiquetas.test.ts` (how the chart labels are laid out so they
+do not overlap), `formato.test.ts` (the SVG palette tied to the CSS tokens and
 WCAG AA contrast) and `App.test.tsx` (mounts the whole page in jsdom and fails if
 anything writes to the console).
 
@@ -323,7 +329,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # in another terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 29 checks in Chrome
+node scripts/e2e.mjs                          # 35 checks in Chrome
 node scripts/comparar.mjs                     # the acceptance criterion
 
 npm i -D --no-save lighthouse chrome-launcher
@@ -332,10 +338,10 @@ node scripts/lighthouse.mjs http://localhost:4173/ desktop
 ```
 
 `scripts/comparar.mjs` runs `python motor.py`, reads the tables the site paints
-—the GPU one and the chassis one— in a real Chrome and compares each cell by
-cell, including the messages for unviable GPUs: the tests already verify engine
-parity with exact equality, and this verifies the last stretch, the one that goes
-from the engine to the pixels.
+—the GPU one, the chassis one and the two together— in a real Chrome and
+compares each cell by cell, including the messages for unviable GPUs: the tests
+already verify engine parity with exact equality, and this verifies the last
+stretch, the one that goes from the engine to the pixels.
 
 Those dependencies are deliberately kept out of `package.json`: they drag in the
 entire puppeteer tree and with it a couple of dozen security advisories that have
@@ -360,6 +366,7 @@ src/
     referencia.json the 500 scenarios generated from Python
     catalogos.ts    reference GPUs, chassis and models, editable by the user
     resultados.ts   joins the UI state to the engine
+    etiquetas.ts    lays out the chart labels so they do not overlap
     formato.ts      presentation layer: the only one that leaves SI units
     urlEstado.ts    state serialization in the query string
     csv.ts          table export
@@ -376,6 +383,7 @@ src/
     SeccionCalculadora.tsx  mounts it only when the reader gets close
     GraficaPareto.tsx       cost against latency (sizing mode)
     GraficaFrontera.tsx     agent/user frontier (capacity mode)
+    MarcadorHardware.tsx    a circle for a GPU, a square for a chassis, and their legend
     TablaGPUs.tsx           GPUs and chassis: a table on desktop, cards on mobile
     BarrasPresion.tsx       the three constraints side by side
     EditorCatalogo.tsx      add, edit and delete GPUs, chassis and models
@@ -386,6 +394,7 @@ src/
     Navegacion.tsx          sections that highlight the active one on scroll
     SelectorIdioma.tsx      the language switch, which is a link and not a state
     Cita.tsx                the citation formats, with the URL you are reading at
+    TablaChasis.tsx         the document's chassis with their price, generated from the catalogue
   entry-server.tsx  prerender entry point, once per language
   App.tsx
 ```

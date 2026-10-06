@@ -39,6 +39,12 @@ export interface Fila {
   cap: Capacidad;
   cruces: Cruces;
   /**
+   * Cuántas unidades se evalúan en el modo capacidad. En las vistas de GPUs y de
+   * chasis es el `G` que fijó el usuario; en "ambos", `G` cuenta GPUs y un chasis
+   * se redondea hacia arriba hasta cubrirlas (ver `unidadesEnCapacidad`).
+   */
+  unidadesCap: number;
+  /**
    * Cuántas veces se multiplica el caché por token al repartir las cabezas de KV
    * entre las n GPUs de la unidad. Es 1 salvo que n supere las cabezas del modelo.
    */
@@ -138,6 +144,18 @@ function fronteraDe(m: Modelo, g: GPU, c: Carga, G: number, maxAgentes: number):
 export const unidadesDe = (e: Estado): GPUCatalogo[] =>
   e.vista === "gpus" ? e.gpus : e.vista === "chasis" ? e.chasis : [...e.gpus, ...e.chasis];
 
+/**
+ * Cuántas unidades de `g` se evalúan en el modo capacidad.
+ *
+ * Con GPUs sueltas o con chasis solos, `G` cuenta unidades y es lo que fijó el
+ * usuario. Con las dos cosas en la misma gráfica, 12 chasis serían 96 GPUs contra
+ * 12: la comparación no diría nada. Ahí `G` cuenta GPUs, y como un chasis solo se
+ * compra entero se redondea hacia arriba: con G=12, una H100 suelta son 12 GPUs y
+ * un DGX H100 son 2 chasis (16 GPUs). Una GPU suelta (n=1) no cambia nunca.
+ */
+export const unidadesEnCapacidad = (e: Estado, g: GPUCatalogo): number =>
+  e.vista === "ambos" ? Math.max(1, Math.ceil(e.G / Math.max(1, g.n))) : e.G;
+
 export function calcular(e: Estado): Resultados {
   const modelo = modeloDe(e);
   const carga = cargaDe(e);
@@ -158,13 +176,14 @@ export function calcular(e: Estado): Resultados {
       const hw: GPU = { ...soloGPU(g), eff: e.eff };
       const t = techos(modelo, hw, carga);
       const dim = dimensionar(modelo, hw, carga);
-      const cap = capacidad(modelo, hw, carga, e.G);
+      const unidadesCap = unidadesEnCapacidad(e, g);
+      const cap = capacidad(modelo, hw, carga, unidadesCap);
 
       const soloAgentes = t.viable
-        ? maximoDeUnaPoblacion(modelo, hw, carga, e.G, "agentes")
+        ? maximoDeUnaPoblacion(modelo, hw, carga, unidadesCap, "agentes")
         : 0;
       const soloUsuarios = t.viable
-        ? maximoDeUnaPoblacion(modelo, hw, carga, e.G, "humanos")
+        ? maximoDeUnaPoblacion(modelo, hw, carga, unidadesCap, "humanos")
         : 0;
 
       return {
@@ -174,10 +193,11 @@ export function calcular(e: Estado): Resultados {
         dim,
         cap,
         cruces: cruces(modelo, hw, carga),
+        unidadesCap,
         kvRep: modelo.kv_heads > 0 ? modeloEn(modelo, hw).kv_heads / modelo.kv_heads : 1,
         soloAgentes,
         soloUsuarios,
-        frontera: t.viable ? fronteraDe(modelo, hw, carga, e.G, soloAgentes) : [],
+        frontera: t.viable ? fronteraDe(modelo, hw, carga, unidadesCap, soloAgentes) : [],
       };
     });
 

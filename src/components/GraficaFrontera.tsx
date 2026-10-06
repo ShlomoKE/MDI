@@ -1,7 +1,8 @@
 /**
  * La frontera de capacidad: agentes contra usuarios, con el hardware fijo.
  *
- * Cada curva es una GPU o un chasis. Todos los puntos sobre ella saturan el sistema, así
+ * Cada curva es una GPU (línea continua, punto redondo) o un chasis (línea a
+ * trazos, punto cuadrado). Todos los puntos sobre ella saturan el sistema, así
  * que no hay un óptimo: es el intercambio real entre atender agentes y atender
  * usuarios, y la pendiente es κ. A diferencia del prototipo la curva se
  * muestrea llamando al motor, no se dibuja como recta: cuando el cuello cambia
@@ -9,10 +10,12 @@
  */
 
 import { useTextos } from "../i18n/contexto";
-import type { Vista } from "../lib/catalogos";
+import { esChasis, type Vista } from "../lib/catalogos";
+import { anchoDeTexto, cajaDeTexto, colocarEtiquetas, repartirEnColumna } from "../lib/etiquetas";
 import { COLOR, colorCuello, fmt } from "../lib/formato";
 import type { Fila } from "../lib/resultados";
 import { VacioSVG } from "./GraficaPareto";
+import { HALO_TEXTO, Marcador } from "./MarcadorHardware";
 
 interface Props {
   filas: Fila[];
@@ -50,6 +53,59 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
 
   const px = (v: number) => ML + (v / maxX) * PW;
   const py = (v: number) => MT + PH - (v / maxY) * PH;
+
+  // Cada punto de operación está en la recta de los agentes fijados, salvo los de las
+  // unidades que no llegan a tantos agentes: esos quedan más a la izquierda, a ras
+  // del eje. Con GPUs y chasis juntos, los que están sobre la recta se amontonan en
+  // la misma vertical y no hay a dónde apartar un nombre en horizontal: van en una
+  // columna a un lado de la recta, repartidos en vertical con el mínimo
+  // desplazamiento, y una línea guía los une a su punto. Los demás, que sí tienen
+  // sitio alrededor, se acomodan junto a su punto como en la gráfica de costo.
+  const textoAgentes = `${fmt(Ua)} ${t.graficas.agentesSufijo}`;
+  const hayRecta = Ua > 0 && Ua < maxX;
+  const punto = (f: Fila) => ({
+    x: px(Math.min(Ua, f.soloAgentes)),
+    y: py(f.cap.alcanza ? Math.max(0, f.cap.usuarios) : 0),
+  });
+  const xRecta = px(Math.min(Ua, maxX));
+  const sobreRecta = (f: Fila) => Math.abs(punto(f).x - xRecta) <= 6;
+  const enColumna = ok.filter(sobreRecta);
+  const sueltas = ok.filter((f) => !sobreRecta(f));
+
+  // Al enfocar un punto, junto a su nombre aparece cuántos usuarios caben: la
+  // columna se pone del lado donde ese texto también cabe, y a la derecha si en
+  // ninguno cabe.
+  const anchoMax = enColumna.length
+    ? Math.max(...enColumna.map((f) => anchoDeTexto(f.gpu.nombre))) + 110
+    : 0;
+  const alDerecha = xRecta + 14 + anchoMax <= W - 4 || xRecta - 14 - anchoMax < ML + 2;
+  const xColumna = alDerecha ? xRecta + 14 : xRecta - 14;
+  // La primera línea base deja libre el rótulo de los agentes, arriba de la recta.
+  const lineas = repartirEnColumna(
+    enColumna.map((f) => ({ id: f.gpu.id, y: punto(f).y + 3.5 })),
+    MT + (hayRecta ? 26 : 9),
+    MT + PH - 3,
+  );
+  const etiquetas = colocarEtiquetas(
+    sueltas.map((f) => ({ id: f.gpu.id, ...punto(f), ancho: anchoDeTexto(f.gpu.nombre) })),
+    { x0: ML + 2, y0: MT - 6, x1: W - 4, y1: MT + PH - 1 },
+    [
+      ...(hayRecta ? [cajaDeTexto(px(Ua) + 5, MT + 12, anchoDeTexto(textoAgentes))] : []),
+      // Lo que ya ocupa la columna: sus nombres y los puntos que quedan junto a ellos.
+      ...enColumna.map((f) =>
+        cajaDeTexto(
+          xColumna,
+          lineas.get(f.gpu.id)!,
+          anchoDeTexto(f.gpu.nombre),
+          alDerecha ? "start" : "end",
+        ),
+      ),
+      ...enColumna.map((f) => {
+        const { x, y } = punto(f);
+        return { x0: x - 8, y0: y - 8, x1: x + 8, y1: y + 8 };
+      }),
+    ],
+  );
 
   return (
     <svg
@@ -110,7 +166,7 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
         {t.graficas.ejeUsuarios}
       </text>
 
-      {/* una curva por GPU */}
+      {/* una curva por unidad de hardware; la de un chasis va a trazos */}
       {ok.map((f) => {
         const col = colorCuello(f.cap.alcanza ? f.cap.cuello : f.cruces.regimen);
         const hv = foco === f.gpu.id;
@@ -121,13 +177,14 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
             fill="none"
             stroke={col}
             strokeWidth={hv ? 2.5 : 1.2}
+            strokeDasharray={esChasis(f.gpu) ? "6 3" : undefined}
             opacity={hv ? 1 : 0.45}
           />
         );
       })}
 
       {/* los agentes que el usuario fijó */}
-      {Ua > 0 && Ua < maxX && (
+      {hayRecta && (
         <>
           <line
             x1={px(Ua)}
@@ -139,17 +196,25 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
             strokeDasharray="4 3"
           />
           <text x={px(Ua) + 5} y={MT + 12} fontSize="10" fill={COLOR.tinta} className="mono">
-            {fmt(Ua)} {t.graficas.agentesSufijo}
+            {textoAgentes}
           </text>
         </>
       )}
 
-      {/* el punto de operación de cada GPU sobre la recta de agentes */}
+      {/* el punto de operación de cada unidad sobre la recta de agentes */}
       {ok.map((f) => {
         const col = colorCuello(f.cap.alcanza ? f.cap.cuello : f.cruces.regimen);
         const hv = foco === f.gpu.id;
-        const x = px(Math.min(Ua, f.soloAgentes));
-        const y = py(f.cap.alcanza ? Math.max(0, f.cap.usuarios) : 0);
+        const { x, y } = punto(f);
+        const enCol = lineas.has(f.gpu.id);
+        const detalle = f.cap.alcanza
+          ? `${fmt(f.cap.usuarios)} ${t.graficas.usuariosSufijo}`
+          : t.calculadora.noAlcanza;
+        const etiqueta = enCol ? null : etiquetas.get(f.gpu.id)!;
+        const linea = enCol ? lineas.get(f.gpu.id)! : 0;
+        const movida = enCol && Math.abs(linea - 3.5 - y) > 2;
+        // Fuera de la columna el detalle va al lado contrario del nombre, para no taparlo.
+        const detalleY = etiqueta && etiqueta.y - y > 8 ? y - 14 : y + 20;
         return (
           <g
             key={f.gpu.id}
@@ -158,40 +223,82 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            aria-label={t.graficas.puntoFrontera(
-              f.gpu.nombre,
-              f.cap.alcanza
-                ? `${fmt(f.cap.usuarios)} ${t.graficas.usuariosSufijo}`
-                : t.calculadora.noAlcanza,
-              fmt(Ua),
-            )}
+            aria-label={t.graficas.puntoFrontera(f.gpu.nombre, detalle, fmt(Ua))}
             style={{ cursor: "pointer" }}
           >
             <circle cx={x} cy={y} r={26} fill="transparent" />
-            <circle cx={x} cy={y} r={hv ? 8 : 5.5} fill={col} opacity={hv ? 1 : 0.88} />
-            <text
+            {movida && (
+              <line
+                x1={x + (alDerecha ? 4 : -4)}
+                y1={y}
+                x2={xColumna + (alDerecha ? -3 : 3)}
+                y2={linea - 3.5}
+                stroke={COLOR.suave}
+                strokeWidth="0.8"
+                opacity="0.7"
+              />
+            )}
+            <Marcador
               x={x}
-              y={y - 12}
-              textAnchor="middle"
-              fontSize="10"
-              fill={COLOR.tinta}
-              fontWeight={hv ? 600 : 400}
-            >
-              {f.gpu.nombre}
-            </text>
-            {hv && (
+              y={y}
+              r={hv ? 8 : 5.5}
+              chasis={esChasis(f.gpu)}
+              fill={col}
+              opacity={hv ? 1 : 0.88}
+            />
+            {enCol ? (
+              /* El nombre queda fijo junto a la recta y el detalle del enfoque crece
+                 hacia afuera: a la derecha del nombre, o a su izquierda si la
+                 columna está del lado izquierdo. */
               <text
-                x={x}
-                y={y + 20}
-                textAnchor="middle"
+                x={xColumna}
+                y={linea}
+                textAnchor={alDerecha ? "start" : "end"}
                 fontSize="10"
-                fill={COLOR.suave}
-                className="mono"
+                fill={COLOR.tinta}
+                fontWeight={hv ? 600 : 400}
+                {...HALO_TEXTO}
               >
-                {f.cap.alcanza
-                  ? `${fmt(f.cap.usuarios)} ${t.graficas.usuariosSufijo}`
-                  : t.calculadora.noAlcanza}
+                {!alDerecha && hv && (
+                  <tspan fill={COLOR.suave} fontWeight={400} className="mono">
+                    {detalle} ·{" "}
+                  </tspan>
+                )}
+                {f.gpu.nombre}
+                {alDerecha && hv && (
+                  <tspan fill={COLOR.suave} fontWeight={400} className="mono">
+                    {" "}
+                    · {detalle}
+                  </tspan>
+                )}
               </text>
+            ) : (
+              <>
+                <text
+                  x={etiqueta!.x}
+                  y={etiqueta!.y}
+                  textAnchor={etiqueta!.ancla}
+                  fontSize="10"
+                  fill={COLOR.tinta}
+                  fontWeight={hv ? 600 : 400}
+                  {...HALO_TEXTO}
+                >
+                  {f.gpu.nombre}
+                </text>
+                {hv && (
+                  <text
+                    x={x}
+                    y={detalleY}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill={COLOR.suave}
+                    className="mono"
+                    {...HALO_TEXTO}
+                  >
+                    {detalle}
+                  </text>
+                )}
+              </>
             )}
           </g>
         );

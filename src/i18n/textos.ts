@@ -89,15 +89,15 @@ const es = {
       chasis:
         "Chasis completos: cada uno junta n GPUs en una sola unidad que sirve una réplica con paralelismo tensorial. Por eso un modelo que no cabe en una GPU puede caber aquí, y por eso el precio es el del chasis entero.",
       ambos:
-        "GPUs sueltas y chasis en la misma gráfica. En el modo capacidad un chasis cuenta como una sola unidad, con todas sus GPUs: compara también el costo.",
+        "GPUs sueltas y chasis en la misma gráfica, para comparar también el costo. En el modo capacidad se fija un número de GPUs y un chasis se redondea hacia arriba, porque solo se compra entero.",
     },
-    /** "12 GPUs", "12 chasis" o "12 unidades", según qué catálogo se compara. */
+    /** "12 GPUs", "12 chasis" o "al menos 12 GPUs", según qué catálogo se compara. */
     unidades: (vista: Vista, g: string) =>
       vista === "gpus"
         ? `${g} GPU${g === "1" ? "" : "s"}`
         : vista === "chasis"
           ? `${g} chasis`
-          : `${g} unidad${g === "1" ? "" : "es"}`,
+          : `al menos ${g} GPU${g === "1" ? "" : "s"}`,
 
     secHardware: "Hardware disponible",
     secUsuarios: "Usuarios",
@@ -105,9 +105,14 @@ const es = {
     secObjetivo: "Objetivo",
     secModelo: "Modelo",
 
-    gpusPorConfig: "Unidades por configuración",
-    notaGpusPorConfig: (g: string) =>
-      `Se evalúa cada GPU o chasis del catálogo como si tuvieras ${g} unidades de ese tipo. Un chasis cuenta como una sola unidad, con todas sus GPUs.`,
+    gpusPorConfig: (vista: Vista): string =>
+      vista === "chasis" ? "Chasis por configuración" : "GPUs por configuración",
+    notaGpusPorConfig: (g: string, vista: Vista) =>
+      vista === "gpus"
+        ? `Se evalúa cada GPU del catálogo como si tuvieras ${g} unidades de ese tipo.`
+        : vista === "chasis"
+          ? `Se evalúa cada chasis del catálogo como si tuvieras ${g} de ese tipo, cada uno con todas sus GPUs.`
+          : `Cada opción se evalúa con al menos ${g} GPUs. Un chasis se compra entero, así que se redondea hacia arriba hasta cubrirlas.`,
     usuarios: "Usuarios",
     agentes: "Agentes",
     calculado: "calculado",
@@ -221,6 +226,8 @@ const es = {
     etiquetaChasis: (n: number) => `${n} GPUs`,
     /** Entre paréntesis, junto al número de chasis: cuántas GPUs son en total. */
     totalGPUs: (n: number) => `${n} GPUs`,
+    /** En el modo capacidad con GPUs y chasis juntos: cuántos chasis salen de redondear. */
+    etiquetaChasisCap: (u: number, n: number) => `${u} chasis · ${u * n} GPUs`,
     colPresion: "Presión mem / lat / cpu",
     colTPOT: "TPOT",
     colTokS: "tok/s sesión",
@@ -260,6 +267,8 @@ const es = {
     ejeAgentes: "Agentes",
     ejeUsuarios: "Usuarios",
     slo: (n: string) => `SLO ${n} ms`,
+    leyendaGPU: "GPU suelta",
+    leyendaChasis: "Chasis",
     vacioPareto: "Ningún hardware del catálogo admite esta configuración.",
     vacioFrontera: (unidades: string) =>
       `Ningún hardware del catálogo sostiene esta carga con ${unidades}.`,
@@ -444,15 +453,15 @@ const en: Textos = {
       chasis:
         "Whole chassis: each one joins n GPUs into a single unit that serves one replica with tensor parallelism. That is why a model that does not fit on one GPU can fit here, and why the price is that of the entire chassis.",
       ambos:
-        "Single GPUs and chassis on the same chart. In capacity mode a chassis counts as one unit, with all of its GPUs: compare the cost too.",
+        "Single GPUs and chassis on the same chart, so the cost can be compared too. In capacity mode you fix a number of GPUs and a chassis rounds up, because it is only bought whole.",
     },
-    /** "12 GPUs", "12 chassis" or "12 units", depending on which catalogue is compared. */
+    /** "12 GPUs", "12 chassis" or "at least 12 GPUs", depending on which catalogue is compared. */
     unidades: (vista: Vista, g: string) =>
       vista === "gpus"
         ? `${g} GPU${g === "1" ? "" : "s"}`
         : vista === "chasis"
           ? `${g} chassis`
-          : `${g} unit${g === "1" ? "" : "s"}`,
+          : `at least ${g} GPU${g === "1" ? "" : "s"}`,
 
     secHardware: "Available hardware",
     secUsuarios: "Users",
@@ -460,9 +469,14 @@ const en: Textos = {
     secObjetivo: "Target",
     secModelo: "Model",
 
-    gpusPorConfig: "Units per configuration",
-    notaGpusPorConfig: (g: string) =>
-      `Every GPU or chassis in the catalogue is evaluated as if you had ${g} units of it. A chassis counts as a single unit, with all of its GPUs.`,
+    gpusPorConfig: (vista: Vista): string =>
+      vista === "chasis" ? "Chassis per configuration" : "GPUs per configuration",
+    notaGpusPorConfig: (g: string, vista: Vista) =>
+      vista === "gpus"
+        ? `Every GPU in the catalogue is evaluated as if you had ${g} units of it.`
+        : vista === "chasis"
+          ? `Every chassis in the catalogue is evaluated as if you had ${g} of them, each with all of its GPUs.`
+          : `Every option is evaluated with at least ${g} GPUs. A chassis is bought whole, so it rounds up to cover them.`,
     usuarios: "Users",
     agentes: "Agents",
     calculado: "computed",
@@ -572,6 +586,8 @@ const en: Textos = {
     etiquetaChasis: (n: number) => `${n} GPUs`,
     /** In brackets, next to the number of chassis: how many GPUs that adds up to. */
     totalGPUs: (n: number) => `${n} GPUs`,
+    /** In capacity mode with GPUs and chassis together: how many chassis the rounding gives. */
+    etiquetaChasisCap: (u: number, n: number) => `${u} chassis · ${u * n} GPUs`,
     colPresion: "Pressure mem / lat / cpu",
     colTPOT: "TPOT",
     colTokS: "tok/s session",
@@ -611,6 +627,8 @@ const en: Textos = {
     ejeAgentes: "Agents",
     ejeUsuarios: "Users",
     slo: (n: string) => `SLO ${n} ms`,
+    leyendaGPU: "Single GPU",
+    leyendaChasis: "Chassis",
     vacioPareto: "No hardware in the catalogue supports this configuration.",
     vacioFrontera: (unidades: string) =>
       `No hardware in the catalogue sustains this load with ${unidades}.`,

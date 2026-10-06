@@ -516,14 +516,18 @@ complete-system price could be found. Any of them can be added from the
 calculator's catalogue.
 
 The calculator's selector —**GPUs**, **Chassis** or **Both**— decides what is
-compared. With *Both* in sizing mode the cost is comparable row by row; in
-capacity mode $G$ counts units, and a chassis is a unit of $n$ GPUs: look at the
-cost as well as at the users that fit.
+compared, and starts on *Both*. In sizing mode every row is sized for the same
+load, so the cost is comparable row by row. In capacity mode, when the two classes
+are compared at once, $G$ counts GPUs and a chassis, which is only bought whole,
+rounds up: with $G = 12$, a single H100 is twelve GPUs and a DGX H100 is two
+chassis, that is sixteen. With a single class in the table, $G$ counts units. That
+is why, in that view, it pays to look at the cost as well as at the users that
+fit.
 
 ## How to read the calculator
 
-In **sizing** mode each point on the chart is a GPU or a chassis: on the
-horizontal axis the TPOT it achieves, on the vertical what the number of units
+In **sizing** mode each point on the chart is a GPU (a circle) or a chassis
+(a square): on the horizontal axis the TPOT it achieves, on the vertical what the number of units
 required costs per hour. The band on the right is the zone that violates the
 SLO. The dotted line joins the Pareto front — off it there is always a better
 option in both dimensions at once.
@@ -532,8 +536,8 @@ The pressure bars in the table show how many units —GPUs or chassis— each
 constraint demands on its own. The filled bar is the one that sets the total;
 the other two, dimmed, are the headroom left over.
 
-In **capacity** mode each curve is a GPU or a chassis. Every point on it saturates the
-system, so there is no single optimum: it is the real trade-off between serving
+In **capacity** mode each curve is a GPU (solid line) or a chassis (dashed line).
+Every point on it saturates the system, so there is no single optimum: it is the real trade-off between serving
 agents and serving users, and the slope is $\kappa$. The elbow that shows up in
 some curves is the point where the bottleneck switches from bytes to compute.
 

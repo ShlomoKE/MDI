@@ -178,7 +178,8 @@ describe("la página monta sin errores", () => {
     const tabla = contenedor.querySelector("#calculadora .hidden.md\\:block table");
     const tarjetas = contenedor.querySelectorAll("#calculadora .md\\:hidden article");
     expect(tabla).not.toBeNull();
-    expect(tarjetas.length).toBe(GPUS.length);
+    // La calculadora arranca comparando GPUs y chasis a la vez.
+    expect(tarjetas.length).toBe(GPUS.length + CHASIS.length);
   });
 });
 
@@ -193,21 +194,38 @@ describe("chasis completos", () => {
   const filasDeTabla = () =>
     contenedor.querySelectorAll("#calculadora .hidden.md\\:block table tbody tr");
 
-  it("por defecto la tabla es la de siempre: solo GPUs sueltas, sin rastro de chasis", () => {
+  /** La cabecera de la tarjeta de la gráfica: su título y sus leyendas. */
+  const cabeceraDeGrafica = (titulo: string) =>
+    Array.from(contenedor.querySelectorAll("#calculadora h3")).find((h) => h.textContent === titulo)!
+      .parentElement!;
+
+  it("por defecto la tabla trae las GPUs sueltas y los chasis juntos", () => {
     montar();
-    expect(filasDeTabla().length).toBe(GPUS.length);
-    const calculadora = contenedor.querySelector("#calculadora")?.textContent ?? "";
-    for (const c of CHASIS) expect(calculadora, c.nombre).not.toContain(c.nombre);
+    expect(filasDeTabla().length).toBe(GPUS.length + CHASIS.length);
+    const tabla = contenedor.querySelector("#calculadora .hidden.md\\:block table")?.textContent ?? "";
+    for (const g of [...GPUS, ...CHASIS]) expect(tabla, g.nombre).toContain(g.nombre);
+    // Con las dos clases en la misma tabla la primera columna ya no dice "GPU".
+    const cabecera = contenedor.querySelector("#calculadora .hidden.md\\:block table thead th");
+    expect(cabecera?.textContent).toBe("Hardware");
     expect(problemas, problemas.join("\n")).toEqual([]);
   });
 
-  it("el selector ofrece GPUs, Chasis y Ambos, y arranca en GPUs", () => {
+  it("con vista=gpus la tabla es la de siempre: solo GPUs sueltas, sin rastro de chasis", () => {
+    abrir("vista=gpus");
+    expect(filasDeTabla().length).toBe(GPUS.length);
+    const calculadora = contenedor.querySelector("#calculadora")?.textContent ?? "";
+    for (const c of CHASIS) expect(calculadora, c.nombre).not.toContain(c.nombre);
+    expect(contenedor.querySelector("#calculadora .hidden.md\\:block table thead th")?.textContent).toBe("GPU");
+    expect(problemas, problemas.join("\n")).toEqual([]);
+  });
+
+  it("el selector ofrece GPUs, Chasis y Ambos, y arranca en Ambos", () => {
     montar();
     const grupo = contenedor.querySelector('[role="group"][aria-label="Qué hardware comparar"]');
     expect(grupo, "falta el selector de vista").not.toBeNull();
     const botones = Array.from(grupo!.querySelectorAll("button"));
     expect(botones.map((b) => b.textContent)).toEqual(["GPUs", "Chasis", "Ambos"]);
-    expect(botones.map((b) => b.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
+    expect(botones.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "false", "true"]);
   });
 
   it("con vista=chasis la tabla lista los chasis con su VRAM total y su número de GPUs", () => {
@@ -247,13 +265,23 @@ describe("chasis completos", () => {
     });
   });
 
-  it("pulsar Chasis cambia la vista", () => {
+  it("pulsar GPUs o Chasis cambia la vista, y volver a Ambos las junta otra vez", () => {
     montar();
     const grupo = contenedor.querySelector('[role="group"][aria-label="Qué hardware comparar"]')!;
-    const chasis = Array.from(grupo.querySelectorAll("button")).find((b) => b.textContent === "Chasis")!;
-    act(() => chasis.click());
-    expect(chasis.getAttribute("aria-pressed")).toBe("true");
+    const boton = (rotulo: string) =>
+      Array.from(grupo.querySelectorAll("button")).find((b) => b.textContent === rotulo)!;
+
+    act(() => boton("Chasis").click());
+    expect(boton("Chasis").getAttribute("aria-pressed")).toBe("true");
     expect(filasDeTabla().length).toBe(CHASIS.length);
+
+    act(() => boton("GPUs").click());
+    expect(boton("GPUs").getAttribute("aria-pressed")).toBe("true");
+    expect(filasDeTabla().length).toBe(GPUS.length);
+
+    act(() => boton("Ambos").click());
+    expect(boton("Ambos").getAttribute("aria-pressed")).toBe("true");
+    expect(filasDeTabla().length).toBe(GPUS.length + CHASIS.length);
     expect(problemas, problemas.join("\n")).toEqual([]);
   });
 
@@ -262,6 +290,50 @@ describe("chasis completos", () => {
     const texto = contenedor.textContent ?? "";
     expect(texto).toContain("Frontera de capacidad con 2 chasis");
     expect(problemas, problemas.join("\n")).toEqual([]);
+  });
+
+  it("con GPUs y chasis juntos, capacidad fija GPUs y cada chasis dice a cuántos llegó", () => {
+    abrir("modo=capacidad&g=12");
+    const texto = (contenedor.textContent ?? "").replace(/\s+/g, " ");
+    expect(texto).toContain("Frontera de capacidad con al menos 12 GPUs");
+    // 12 GPUs en chasis de 8 son 2 chasis, es decir 16 GPUs: el redondeo se ve.
+    expect(texto).toContain("2 chasis · 16 GPUs");
+    const filas = Array.from(filasDeTabla());
+    const dgx = filas.find((f) => (f.textContent ?? "").includes("DGX H100"))!;
+    expect(dgx.textContent).toContain("2 chasis · 16 GPUs");
+    // La GPU suelta no lleva rastro de chasis y se evalúa con las 12 que se pidieron.
+    const h100 = filas.find((f) => (f.textContent ?? "").includes("H100 SXM"))!;
+    expect(h100.textContent).not.toContain("chasis");
+    expect(problemas, problemas.join("\n")).toEqual([]);
+  });
+
+  it("las gráficas distinguen chasis de GPU: cuadrados contra círculos, con su leyenda", () => {
+    montar();
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    // En la gráfica de costo los puntos son los viables; cada clase tiene su forma.
+    expect(grafica.querySelectorAll("g[tabindex] circle[fill]:not([fill='transparent'])").length).toBeGreaterThan(0);
+    expect(grafica.querySelectorAll("g[tabindex] rect").length).toBeGreaterThan(0);
+    const leyenda = cabeceraDeGrafica("Costo contra latencia").textContent ?? "";
+    expect(leyenda).toContain("GPU suelta");
+    expect(leyenda).toContain("Chasis");
+  });
+
+  it("con una sola clase de hardware no hay leyenda de formas ni cuadrados", () => {
+    abrir("vista=gpus");
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    expect(grafica.querySelectorAll("g[tabindex] rect").length).toBe(0);
+    const leyenda = cabeceraDeGrafica("Costo contra latencia").textContent ?? "";
+    expect(leyenda).not.toContain("GPU suelta");
+  });
+
+  it("la frontera de capacidad dibuja a trazos la curva de cada chasis", () => {
+    abrir("modo=capacidad&g=12");
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    const curvas = Array.from(grafica.querySelectorAll("polyline"));
+    const aTrazos = curvas.filter((c) => c.getAttribute("stroke-dasharray") === "6 3");
+    const continuas = curvas.filter((c) => !c.hasAttribute("stroke-dasharray"));
+    expect(aTrazos.length).toBeGreaterThan(0);
+    expect(continuas.length).toBeGreaterThan(0);
   });
 
   it("el editor del catálogo trae una pestaña de chasis con sus campos", () => {
@@ -567,7 +639,7 @@ describe("el estado viaja en la URL", () => {
     };
     const q = serializar(e);
     expect(q).toContain("vista=chasis");
-    expect(q).toContain("ch=");
+    expect(q).toContain("chasis=");
     const vuelta = leer(q);
     expect(vuelta.vista).toBe("chasis");
     expect(vuelta.chasis).toHaveLength(2);
@@ -585,28 +657,49 @@ describe("el estado viaja en la URL", () => {
     expect(vuelta.gpus).toEqual(GPUS);
   });
 
-  it("el catálogo de chasis de fábrica no ensucia la query, aunque se cambie de vista", () => {
-    expect(serializar({ ...ESTADO_INICIAL, vista: "ambos" })).toBe("vista=ambos");
+  it("el contexto de los humanos y el catálogo de chasis viajan juntos sin pisarse", () => {
+    // Antes los dos compartían el parámetro `ch`: editar el contexto y un precio de
+    // chasis a la vez dejaba el enlace sin el contexto.
+    const e: Estado = {
+      ...ESTADO_INICIAL,
+      Ch: 16000,
+      chasis: [{ ...CHASIS[0], precio_hora: 22.5 }, ...CHASIS.slice(1)],
+    };
+    const q = new URLSearchParams(serializar(e));
+    expect(q.get("ch")).toBe("16000");
+    expect(q.get("chasis")).not.toBeNull();
+    const vuelta = leer(serializar(e));
+    expect(vuelta.Ch).toBe(16000);
+    expect(vuelta.chasis[0].precio_hora).toBe(22.5);
+    expect(vuelta.chasis.map((g) => g.nombre)).toEqual(CHASIS.map((g) => g.nombre));
   });
 
-  it("un enlace de antes de los chasis sigue abriendo igual", () => {
+  it("el catálogo de chasis de fábrica no ensucia la query, y solo la vista no habitual viaja", () => {
+    expect(serializar({ ...ESTADO_INICIAL, vista: "ambos" })).toBe("");
+    expect(serializar({ ...ESTADO_INICIAL, vista: "gpus" })).toBe("vista=gpus");
+    expect(serializar({ ...ESTADO_INICIAL, vista: "chasis" })).toBe("vista=chasis");
+  });
+
+  it("un enlace de antes de los chasis sigue abriendo con su escenario", () => {
     const vieja = leer("?uh=500&gpus=" + encodeURIComponent("Vieja~80~2000~900~1.5~1"));
-    expect(vieja.vista).toBe("gpus");
+    // No dice qué comparar, así que se abre en la vista por defecto.
+    expect(vieja.vista).toBe(ESTADO_INICIAL.vista);
+    expect(vieja.Uh).toBe(500);
     expect(vieja.chasis).toEqual(CHASIS);
     // Una GPU de un enlace viejo es una GPU suelta: una sola, escalado perfecto.
     expect(vieja.gpus[0]).toMatchObject({ nombre: "Vieja", n: 1, escala: 1 });
   });
 
   it("una query basura de chasis no rompe, y n y σ se acotan al rango válido", () => {
-    const basura = leer("?ch=%%%&vista=nada");
+    const basura = leer("?chasis=%%%&vista=nada");
     expect(basura.chasis).toEqual(CHASIS);
-    expect(basura.vista).toBe("gpus");
+    expect(basura.vista).toBe(ESTADO_INICIAL.vista);
 
-    const extremos = leer("?ch=" + ["Raro", "0", "80", "2000", "900", "10", "7", "1"].join("~"));
+    const extremos = leer("?chasis=" + ["Raro", "0", "80", "2000", "900", "10", "7", "1"].join("~"));
     expect(extremos.chasis[0].n).toBe(1); // al menos una GPU
     expect(extremos.chasis[0].escala).toBe(1); // σ no pasa de 1
 
-    const fraccion = leer("?ch=" + ["Raro", "2.9", "80", "2000", "900", "10", "0.01", "1"].join("~"));
+    const fraccion = leer("?chasis=" + ["Raro", "2.9", "80", "2000", "900", "10", "0.01", "1"].join("~"));
     expect(fraccion.chasis[0].n).toBe(2); // un número entero de GPUs
     expect(fraccion.chasis[0].escala).toBe(0.05); // σ no baja de 0.05
   });
@@ -616,7 +709,7 @@ describe("el estado viaja en la URL", () => {
     window.history.replaceState(null, "", "/?" + serializar(e));
     montar();
     const texto = contenedor.textContent ?? "";
-    expect(texto).toContain("Frontera de capacidad con 12 GPUs");
+    expect(texto).toContain("Frontera de capacidad con al menos 12 GPUs");
     // Los usuarios que motor.py reporta para la H100 SXM con G=12.
     expect(texto).toContain(fmt(16388));
     window.history.replaceState(null, "", "/");

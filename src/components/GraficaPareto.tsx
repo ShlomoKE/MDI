@@ -1,17 +1,19 @@
 /**
  * Costo contra latencia, en SVG dibujado a mano.
  *
- * Cada punto es una GPU o un chasis dimensionado para la carga: en X el TPOT
- * que logra, en Y lo que cuesta por hora la cantidad de unidades que hacen
- * falta. La banda de la derecha es la zona que incumple el SLO. La línea
- * punteada une el frente de Pareto: fuera de esa línea siempre hay una opción
- * mejor en ambos ejes.
+ * Cada punto es una GPU (círculo) o un chasis (cuadrado) dimensionado para la
+ * carga: en X el TPOT que logra, en Y lo que cuesta por hora la cantidad de
+ * unidades que hacen falta. La banda de la derecha es la zona que incumple el
+ * SLO. La línea punteada une el frente de Pareto: fuera de esa línea siempre hay
+ * una opción mejor en ambos ejes.
  */
 
 import { useTextos } from "../i18n/contexto";
 import { esChasis } from "../lib/catalogos";
+import { anchoDeTexto, cajaDeTexto, colocarEtiquetas } from "../lib/etiquetas";
 import { COLOR, colorCuello, fmt, usd } from "../lib/formato";
 import { dibujable, type Fila } from "../lib/resultados";
+import { HALO_TEXTO, Marcador } from "./MarcadorHardware";
 
 interface Props {
   filas: Fila[];
@@ -45,6 +47,20 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
   if (!ok.length) {
     return <VacioSVG texto={t.graficas.vacioPareto} />;
   }
+
+  // Con GPUs y chasis juntos hay nueve o doce puntos, y varios caen casi en el
+  // mismo sitio: cada nombre se acomoda donde no pise a otro ni a la leyenda del SLO.
+  const textoSLO = t.graficas.slo(fmt(slo_ms, slo_ms % 1 === 0 ? 0 : 1));
+  const etiquetas = colocarEtiquetas(
+    ok.map((f) => ({
+      id: f.gpu.id,
+      x: px(f.dim.tpot_ms),
+      y: py(f.dim.costo_hora),
+      ancho: anchoDeTexto(f.gpu.nombre),
+    })),
+    { x0: ML + 2, y0: MT - 6, x1: W - 4, y1: MT + PH - 1 },
+    [cajaDeTexto(px(slo_ms) + 5, MT + 12, anchoDeTexto(textoSLO))],
+  );
 
   return (
     <svg
@@ -131,7 +147,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
         fill={COLOR.latencia}
         className="mono"
       >
-        {t.graficas.slo(fmt(slo_ms, slo_ms % 1 === 0 ? 0 : 1))}
+        {textoSLO}
       </text>
 
       {/* frente de Pareto */}
@@ -146,12 +162,15 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
         />
       )}
 
-      {/* una GPU por punto */}
+      {/* una unidad de hardware por punto */}
       {ok.map((f) => {
         const col = colorCuello(f.dim.cuello);
         const hv = foco === f.gpu.id;
         const x = px(f.dim.tpot_ms);
         const y = py(f.dim.costo_hora);
+        const et = etiquetas.get(f.gpu.id)!;
+        // El detalle del enfoque va al lado contrario del nombre para no taparlo.
+        const detalleY = et.y - y > 8 ? y - 14 : y + 20;
         return (
           <g
             key={f.gpu.id}
@@ -170,25 +189,34 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
           >
             {/* área de contacto generosa para el dedo en pantallas táctiles */}
             <circle cx={x} cy={y} r={26} fill="transparent" />
-            <circle cx={x} cy={y} r={hv ? 8 : 5.5} fill={col} opacity={hv ? 1 : 0.88} />
-            <text
+            <Marcador
               x={x}
-              y={y - 12}
-              textAnchor="middle"
+              y={y}
+              r={hv ? 8 : 5.5}
+              chasis={esChasis(f.gpu)}
+              fill={col}
+              opacity={hv ? 1 : 0.88}
+            />
+            <text
+              x={et.x}
+              y={et.y}
+              textAnchor={et.ancla}
               fontSize="10"
               fill={COLOR.tinta}
               fontWeight={hv ? 600 : 400}
+              {...HALO_TEXTO}
             >
               {f.gpu.nombre}
             </text>
             {hv && (
               <text
                 x={x}
-                y={y + 20}
+                y={detalleY}
                 textAnchor="middle"
                 fontSize="10"
                 fill={COLOR.suave}
                 className="mono"
+                {...HALO_TEXTO}
               >
                 {f.dim.G}× · {usd(f.dim.costo_hora)}/h
               </text>

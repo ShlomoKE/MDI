@@ -516,14 +516,18 @@ que no se encontró un precio de sistema completo. Cualquiera se puede agregar
 desde el catálogo de la calculadora.
 
 El selector de la calculadora —**GPUs**, **Chasis** o **Ambos**— decide qué se
-compara. Con *Ambos* en el modo dimensionar el costo es comparable fila por fila;
-en el modo capacidad $G$ cuenta unidades, y un chasis es una unidad de $n$ GPUs:
-conviene mirar el costo además de los usuarios que caben.
+compara, y arranca en *Ambos*. En el modo dimensionar cada fila se dimensiona para
+la misma carga, así que el costo es comparable fila por fila. En el modo capacidad,
+cuando se comparan las dos clases a la vez, $G$ cuenta GPUs y un chasis, que solo
+se compra entero, se redondea hacia arriba: con $G = 12$, una H100 suelta son doce
+GPUs y un DGX H100 son dos chasis, es decir dieciséis. Con una sola clase en la
+tabla, $G$ cuenta unidades. Por eso, en esa vista conviene mirar el costo además
+de los usuarios que caben.
 
 ## Cómo leer la calculadora
 
-En el modo **dimensionar** cada punto de la gráfica es una GPU o un chasis: en el
-eje horizontal el TPOT que logra, en el vertical lo que cuesta por hora la
+En el modo **dimensionar** cada punto de la gráfica es una GPU (un círculo) o un
+chasis (un cuadrado): en el eje horizontal el TPOT que logra, en el vertical lo que cuesta por hora la
 cantidad de unidades que hacen falta. La banda de la derecha es la zona que incumple el
 SLO. La línea punteada une el frente de Pareto — fuera de ella siempre hay una
 opción mejor en las dos dimensiones a la vez.
@@ -532,8 +536,8 @@ Las barras de presión de la tabla muestran cuántas unidades —GPUs o chasis�
 exige cada restricción por separado. La barra llena es la que fija el total; las otras dos, atenuadas,
 son la holgura que sobra.
 
-En el modo **capacidad** cada curva es una GPU o un chasis. Todos los puntos sobre ella
-saturan el sistema, así que no hay un óptimo único: es el intercambio real entre
+En el modo **capacidad** cada curva es una GPU (línea continua) o un chasis (línea a
+trazos). Todos los puntos sobre ella saturan el sistema, así que no hay un óptimo único: es el intercambio real entre
 atender agentes y atender usuarios, y la pendiente es $\kappa$. El codo que
 aparece en algunas curvas es el punto donde el cuello cambia de bytes a cómputo.
 

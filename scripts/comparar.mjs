@@ -6,8 +6,9 @@
  * con los mismos parámetros. La calculadora arranca justo en el escenario de la
  * demo de motor.py, así que no hay que tocar ningún campo.
  *
- * Son dos tablas: la de GPUs sueltas, que es la vista por defecto, y la de
- * chasis completos, que la página muestra con `?vista=chasis`.
+ * Son tres comparaciones: la tabla de GPUs sueltas (`?vista=gpus`), la de chasis
+ * completos (`?vista=chasis`) y la vista por defecto, `?vista=ambos`, que trae las
+ * dos juntas y tiene que dar, fila por fila, los mismos números que las separadas.
  *
  *   npm run build
  *   npx vite preview --port 4173 --strictPort   # en otra terminal
@@ -158,8 +159,10 @@ try {
     defaultViewport: { width: 1600, height: 1000 },
   });
 
-  await comparar(browser, "GPU", "/#calculadora", python.gpus);
+  await comparar(browser, "GPU", "/?vista=gpus#calculadora", python.gpus);
   await comparar(browser, "Chasis", "/?vista=chasis#calculadora", python.chasis);
+  // Sin ninguna query: lo que ve quien abre la página.
+  await comparar(browser, "Ambos", "/#calculadora", new Map([...python.gpus, ...python.chasis]));
 
   await browser.disconnect();
 } finally {

@@ -51,7 +51,7 @@ export interface Estado {
 
 export const ESTADO_INICIAL: Estado = {
   modo: "dimensionar",
-  vista: "gpus",
+  vista: "ambos",
   Uh: CARGA_DEMO.humanos.U,
   Ch: CARGA_DEMO.humanos.C,
   Ua: CARGA_DEMO.agentes.U,
@@ -254,7 +254,7 @@ export function serializar(e: Estado): string {
   if (gpusCod !== codificarGPUs(GPUS)) q.set("gpus", gpusCod);
 
   const chasisCod = codificarChasis(e.chasis);
-  if (chasisCod !== codificarChasis(CHASIS)) q.set("ch", chasisCod);
+  if (chasisCod !== codificarChasis(CHASIS)) q.set("chasis", chasisCod);
 
   // El id importa solo como índice dentro del catálogo vigente.
   const idx = e.modelos.findIndex((m) => m.id === e.modeloId);
@@ -268,7 +268,7 @@ export function leer(query: string): Estado {
 
   const modelos = q.has("mods") ? decodificarModelos(q.get("mods")!) : null;
   const gpus = q.has("gpus") ? decodificarGPUs(q.get("gpus")!) : null;
-  const chasis = q.has("ch") ? decodificarChasis(q.get("ch")!) : null;
+  const chasis = q.has("chasis") ? decodificarChasis(q.get("chasis")!) : null;
   const catModelos = modelos ?? MODELOS;
   const catGpus = gpus ?? GPUS;
   const catChasis = chasis ?? CHASIS;

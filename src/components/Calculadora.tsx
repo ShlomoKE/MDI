@@ -13,6 +13,7 @@ import Ecuacion from "./Ecuacion";
 import EditorCatalogo from "./EditorCatalogo";
 import GraficaFrontera from "./GraficaFrontera";
 import GraficaPareto from "./GraficaPareto";
+import { LeyendaHardware } from "./MarcadorHardware";
 import TablaGPUs from "./TablaGPUs";
 import { Boton, Campo, Fijo, Kpi, Seccion } from "./Campos";
 import {
@@ -86,6 +87,10 @@ export function Calculadora() {
   // El foco puede caer en una unidad excluida de la comparación: sigue teniendo
   // fila en la tabla y su detalle es igual de válido.
   const activo = r.filas.find((f) => f.gpu.id === foco && f.techos.viable) ?? r.mejor;
+  // Las formas de las gráficas distinguen GPUs de chasis; la leyenda solo hace
+  // falta cuando lo que se dibuja trae de las dos clases.
+  const hayMezcla =
+    r.ok.some((f) => esChasis(f.gpu)) && r.ok.some((f) => !esChasis(f.gpu));
   const cuelloActivo = activo
     ? dim
       ? activo.dim.cuello
@@ -175,9 +180,9 @@ export function Calculadora() {
         <div className="p-4 sm:p-6 lg:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-linea bg-superficie">
           {!dim && (
             <Seccion titulo={t.calculadora.secHardware}>
-              <Campo label={t.calculadora.gpusPorConfig} valor={estado.G} set={(v) => set({ G: Math.max(1, Math.round(v)) })} paso={1} min={1} />
+              <Campo label={t.calculadora.gpusPorConfig(estado.vista)} valor={estado.G} set={(v) => set({ G: Math.max(1, Math.round(v)) })} paso={1} min={1} />
               <p className="text-xs mt-2 leading-relaxed text-suave">
-                {t.calculadora.notaGpusPorConfig(String(estado.G))}
+                {t.calculadora.notaGpusPorConfig(String(estado.G), estado.vista)}
               </p>
             </Seccion>
           )}
@@ -329,7 +334,8 @@ export function Calculadora() {
                   ? t.calculadora.graficaDim
                   : t.calculadora.graficaCap(t.calculadora.unidades(estado.vista, String(estado.G)))}
               </h3>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-suave">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-suave">
+                {hayMezcla && <LeyendaHardware conLinea={!dim} />}
                 {(["memoria", "latencia", "computo"] as const).map((k) => (
                   <span key={k} className="flex items-center gap-1.5">
                     <i
@@ -368,7 +374,6 @@ export function Calculadora() {
             vista={estado.vista}
             modeloNombre={r.modelo.nombre}
             slo_ms={estado.slo_ms}
-            G={estado.G}
             mejorId={r.mejor ? r.mejor.gpu.id : null}
             foco={foco}
             setFoco={setFoco}
@@ -395,7 +400,7 @@ export function Calculadora() {
                 <h3 className="rotulo text-tinta">
                   {t.calculadora.tituloDetalle(
                     activo.gpu.nombre,
-                    dim ? activo.dim.G : estado.G,
+                    dim ? activo.dim.G : activo.unidadesCap,
                     activo.gpu.n,
                   )}
                 </h3>
@@ -492,7 +497,10 @@ export function Calculadora() {
                 {dim
                   ? t.calculadora.cierreDim(fmt(r.pctAgentes))
                   : t.calculadora.cierreCap(
-                      t.calculadora.unidades(esChasis(activo.gpu) ? "chasis" : "gpus", String(estado.G)),
+                      t.calculadora.unidades(
+                        esChasis(activo.gpu) ? "chasis" : "gpus",
+                        String(activo.unidadesCap),
+                      ),
                       nombreCuello(t, cuelloActivo),
                       fmt(r.kappa),
                     )}

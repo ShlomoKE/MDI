@@ -226,12 +226,16 @@ $$
 alimentan.** Un chasis es una unidad de $n$ GPUs que sirve una sola réplica con
 paralelismo tensorial, así que los recursos se suman y el overhead del motor se
 paga por GPU. $G$ pasa a contar chasis, y el costo es $G$ por el precio del
-chasis completo. $\sigma$ es la fracción del ancho de banda y los FLOPS agregados
-que sobrevive a la comunicación entre GPUs: un supuesto, no una medición, aunque
-`scripts/estimar_sigma.py` enseña de dónde sale cada valor. El precio por hora de
-cada chasis sale de su precio de lista con una regla explícita (`horaria`, en
-`src/lib/catalogos.ts`), y cada uno lleva su fuente, su consumo y su fecha; la
-página los muestra en una tabla.
+chasis completo. La calculadora arranca comparando GPUs sueltas y chasis en la
+misma tabla y en las mismas gráficas —círculos para las GPUs, cuadrados para los
+chasis— y un selector deja ver cada clase por separado; al compararlas juntas en
+el modo capacidad, $G$ cuenta GPUs y el chasis, que solo se compra entero, se
+redondea hacia arriba. $\sigma$ es la fracción del ancho de banda y los FLOPS
+agregados que sobrevive a la comunicación entre GPUs: un supuesto, no una
+medición, aunque `scripts/estimar_sigma.py` enseña de dónde sale cada valor. El
+precio por hora de cada chasis sale de su precio de lista con una regla explícita
+(`horaria`, en `src/lib/catalogos.ts`), y cada uno lleva su fuente, su consumo y
+su fecha; la página los muestra en una tabla.
 
 $$
 H_{\text{ef}} = \max(H,\ n)
@@ -300,17 +304,19 @@ las pruebas**. La calculadora arranca exactamente en el escenario que imprime
 overhead de 4 GB, eficiencia 0.5— para que los dos se puedan comparar sin tocar
 un solo campo.
 
-Las pruebas se reparten en tres archivos: `motor.test.ts` (paridad con Python e
-invariantes del modelo), `formato.test.ts` (la paleta de los SVG atada a los
-tokens de CSS y el contraste WCAG AA) y `App.test.tsx` (monta la página entera en
-jsdom y falla si algo escribe en la consola).
+Las pruebas se reparten en cinco archivos: `motor.test.ts` (paridad con Python e
+invariantes del modelo), `resultados.test.ts` (qué se compara y con cuántas
+unidades en el modo capacidad), `etiquetas.test.ts` (el acomodo de los nombres en
+las gráficas), `formato.test.ts` (la paleta de los SVG atada a los tokens de CSS
+y el contraste WCAG AA) y `App.test.tsx` (monta la página entera en jsdom y falla
+si algo escribe en la consola).
 
 ## Desarrollo
 
 ```
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 621 pruebas, en los dos idiomas
+npm test           # 655 pruebas, en los dos idiomas
 npm run build      # cliente + servidor + prerenderizado, sale a dist/
 npm run preview    # sirve dist/ localmente
 ```
@@ -323,7 +329,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # en otra terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 29 comprobaciones en Chrome
+node scripts/e2e.mjs                          # 35 comprobaciones en Chrome
 node scripts/comparar.mjs                     # el criterio de aceptación
 
 npm i -D --no-save lighthouse chrome-launcher
@@ -332,10 +338,10 @@ node scripts/lighthouse.mjs http://localhost:4173/ desktop
 ```
 
 `scripts/comparar.mjs` corre `python motor.py`, lee las tablas que pinta el sitio
-—la de GPUs y la de chasis— en un Chrome real y compara cada una celda por celda,
-incluidos los mensajes de las GPUs inviables: las pruebas ya verifican la paridad
-del motor con igualdad exacta, y esto verifica el último tramo, el que va del
-motor a los píxeles.
+—la de GPUs, la de chasis y la de ambos juntos— en un Chrome real y compara cada
+una celda por celda, incluidos los mensajes de las GPUs inviables: las pruebas ya
+verifican la paridad del motor con igualdad exacta, y esto verifica el último
+tramo, el que va del motor a los píxeles.
 
 Esas dependencias están deliberadamente fuera de `package.json`: arrastran el
 árbol entero de puppeteer y con él una veintena de avisos de seguridad que no
@@ -360,6 +366,7 @@ src/
     referencia.json los 500 escenarios generados desde Python
     catalogos.ts    GPUs, chasis y modelos de referencia, editables por el usuario
     resultados.ts   une el estado de la UI con el motor
+    etiquetas.ts    acomoda los nombres de las gráficas para que no se pisen
     formato.ts      capa de presentación: la única que sale de unidades SI
     urlEstado.ts    serialización del estado en la query string
     csv.ts          exportación de la tabla
@@ -376,6 +383,7 @@ src/
     SeccionCalculadora.tsx  la monta solo cuando el lector se acerca
     GraficaPareto.tsx       costo contra latencia (modo dimensionar)
     GraficaFrontera.tsx     frontera agentes/usuarios (modo capacidad)
+    MarcadorHardware.tsx    círculo para una GPU, cuadrado para un chasis, y su leyenda
     TablaGPUs.tsx           GPUs y chasis: tabla en escritorio, tarjetas en móvil
     BarrasPresion.tsx       las tres restricciones lado a lado
     EditorCatalogo.tsx      agregar, editar y eliminar GPUs, chasis y modelos

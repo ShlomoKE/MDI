@@ -46,6 +46,16 @@ try {
   ok(texto.includes('29.4 ms'), 'la H100 SXM muestra el TPOT de motor.py (29.4 ms)');
   ok(texto.includes('SLO de 30 ms inalcanzable en L40S'), 'los motivos de inviabilidad son los de motor.py');
 
+  // La vista por defecto compara GPUs y chasis a la vez, y la gráfica lo muestra:
+  // círculos para las GPUs sueltas, cuadrados para los chasis, y su leyenda.
+  const formas = await page.$eval('#calculadora svg[role="img"]', (svg) => ({
+    circulos: svg.querySelectorAll('g[tabindex] circle:not([fill="transparent"])').length,
+    cuadrados: svg.querySelectorAll('g[tabindex] rect').length,
+  }));
+  ok(formas.circulos > 0 && formas.cuadrados > 0,
+     `la gráfica de costo mezcla GPUs (${formas.circulos} círculos) y chasis (${formas.cuadrados} cuadrados)`);
+  ok(texto.includes('GPU suelta'), 'la leyenda distingue GPU suelta de chasis');
+
   // Interacción: cambiar de modo y comprobar que la URL lo refleja. El clic va
   // por el DOM y no por coordenadas: la calculadora acaba de montarse y sigue
   // asentando el layout, así que un clic posicional aterriza donde el botón ya
@@ -57,6 +67,14 @@ try {
   ok(true, 'el modo se serializa en la URL');
   const cap = await page.$eval('#calculadora', (e) => e.textContent);
   ok(cap.includes('Frontera de capacidad'), 'el modo capacidad renderiza su gráfica');
+  ok(cap.includes('al menos 12 GPUs'), 'con GPUs y chasis juntos, capacidad cuenta GPUs: «al menos 12 GPUs»');
+  ok(cap.includes('2 chasis · 16 GPUs'), 'un chasis se redondea hacia arriba y dice a cuántos llegó');
+  const curvas = await page.$eval('#calculadora svg[role="img"]', (svg) => ({
+    continuas: Array.from(svg.querySelectorAll('polyline')).filter((l) => !l.hasAttribute('stroke-dasharray')).length,
+    atrazos: Array.from(svg.querySelectorAll('polyline')).filter((l) => l.getAttribute('stroke-dasharray') === '6 3').length,
+  }));
+  ok(curvas.continuas > 0 && curvas.atrazos > 0,
+     `la frontera dibuja GPUs con línea continua (${curvas.continuas}) y chasis a trazos (${curvas.atrazos})`);
 
   // ---------- 2. Móvil 360px: tarjetas y cero scroll horizontal ----------
   const movil = await browser.newPage();
@@ -68,7 +86,7 @@ try {
   await movil.waitForSelector('#calculadora article', { timeout: 8000 });
 
   const tarjetas = await movil.$$eval('#calculadora article', (n) => n.length);
-  ok(tarjetas === 7, `a 360px hay ${tarjetas} tarjetas apiladas (esperadas 7)`);
+  ok(tarjetas === 12, `a 360px hay ${tarjetas} tarjetas apiladas (esperadas 12: 7 GPUs y 5 chasis)`);
   const tablaVisible = await movil.$eval('#calculadora .hidden', (e) => getComputedStyle(e).display !== 'none').catch(() => false);
   ok(!tablaVisible, 'a 360px la tabla de escritorio está oculta');
 
@@ -106,12 +124,21 @@ try {
 
   // El selector cambia la vista y la URL lo recuerda; el clic va por el DOM por
   // la misma razón que el del modo.
-  await chasisM.evaluate(() => {
+  const pulsar = (rotulo) => chasisM.evaluate((r) => {
     const grupo = document.querySelector('#calculadora [role="group"][aria-label="Qué hardware comparar"]');
-    Array.from(grupo.querySelectorAll('button')).find((b) => b.textContent === 'Ambos').click();
-  });
-  await chasisM.waitForFunction(() => location.search.includes('vista=ambos'), { timeout: 5000 });
+    Array.from(grupo.querySelectorAll('button')).find((b) => b.textContent === r).click();
+  }, rotulo);
+
+  await pulsar('GPUs');
+  await chasisM.waitForFunction(() => location.search.includes('vista=gpus'), { timeout: 5000 });
   ok(true, 'la vista se serializa en la URL');
+  const tarjetasGPUs = await chasisM.$$eval('#calculadora article', (n) => n.length);
+  ok(tarjetasGPUs === 7, `GPUs deja las ${tarjetasGPUs} GPUs sueltas (esperadas 7)`);
+
+  // Ambos es la vista por defecto: no ensucia la URL y suma las dos listas.
+  await pulsar('Ambos');
+  await chasisM.waitForFunction(() => !location.search.includes('vista='), { timeout: 5000 });
+  ok(true, 'la vista por defecto no se escribe en la URL');
   const tarjetasAmbos = await chasisM.$$eval('#calculadora article', (n) => n.length);
   ok(tarjetasAmbos === tarjetasC + 7, `Ambos suma las GPUs y los chasis (${tarjetasAmbos} = ${tarjetasC} + 7)`);
 
