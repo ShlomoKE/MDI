@@ -27,7 +27,7 @@ import {
   type Techos,
 } from "./motor";
 import { DUTY_AGENTE, DUTY_HUMANO, soloGPU, soloModelo, type GPUCatalogo } from "./catalogos";
-import type { Estado } from "./urlEstado";
+import type { Estado, Modo } from "./urlEstado";
 
 export interface Fila {
   /** La unidad del catálogo: una GPU suelta o un chasis completo. */
@@ -49,6 +49,13 @@ export interface Fila {
    * entre las n GPUs de la unidad. Es 1 salvo que n supere las cabezas del modelo.
    */
   kvRep: number;
+  /**
+   * Otra opción de las que se comparan no cuesta más y rinde igual o mejor —en
+   * latencia al dimensionar, en usuarios que caben al medir capacidad—, y es mejor
+   * en alguna de las dos: esta ya no conviene. Es lo que queda fuera del frente de
+   * Pareto. Una unidad desmarcada, o inviable, ni se marca ni marca a las demás.
+   */
+  dominada: boolean;
   /** Agentes que caben si no hubiera ningún humano. */
   soloAgentes: number;
   /** Humanos que caben si no hubiera ningún agente. */
@@ -156,6 +163,48 @@ export const unidadesDe = (e: Estado): GPUCatalogo[] =>
 export const unidadesEnCapacidad = (e: Estado, g: GPUCatalogo): number =>
   e.vista === "ambos" ? Math.max(1, Math.ceil(e.G / Math.max(1, g.n))) : e.G;
 
+/**
+ * Las opciones dominadas: otra cuesta lo mismo o menos y rinde igual o mejor, y es
+ * estrictamente mejor en alguna de las dos cosas.
+ *
+ * Qué es "rendir" lo fija el modo. Al dimensionar, cada opción ya cumple el SLO con
+ * las unidades que hacen falta, y lo que distingue a unas de otras es el TPOT que
+ * logran: menos es mejor. Al medir capacidad, con el hardware fijo, es cuántos
+ * usuarios caben junto a los agentes fijados: más es mejor, y una opción que ni
+ * siquiera aguanta esos agentes rinde peor que cualquiera que sí.
+ *
+ * Recibe solo las candidatas —incluidas en la comparación y viables—, y devuelve
+ * los ids de las que otra supera. Las filas cuyos números no se pueden comparar
+ * (un NaN mientras se reteclea un campo) ni dominan ni quedan dominadas.
+ */
+export function dominadasDe(candidatas: Fila[], modo: Modo): Set<string> {
+  const puntos = candidatas
+    .map((f) =>
+      modo === "dimensionar"
+        ? { id: f.gpu.id, costo: f.dim.costo_hora, malo: f.dim.tpot_ms, valido: dibujable(f) }
+        : {
+            id: f.gpu.id,
+            costo: f.cap.costo_hora,
+            malo: f.cap.alcanza ? -f.cap.usuarios : Infinity,
+            valido: Number.isFinite(f.cap.costo_hora) && !Number.isNaN(f.cap.usuarios),
+          },
+    )
+    .filter((p) => p.valido);
+
+  const dominadas = new Set<string>();
+  for (const p of puntos) {
+    const hay = puntos.some(
+      (o) =>
+        o !== p &&
+        o.costo <= p.costo &&
+        o.malo <= p.malo &&
+        (o.costo < p.costo || o.malo < p.malo),
+    );
+    if (hay) dominadas.add(p.id);
+  }
+  return dominadas;
+}
+
 export function calcular(e: Estado): Resultados {
   const modelo = modeloDe(e);
   const carga = cargaDe(e);
@@ -169,7 +218,7 @@ export function calcular(e: Estado): Resultados {
   // tiene que seguir en la tabla, porque es donde vive la única casilla que
   // puede volver a marcarlas. El filtro por `on` se aplica al derivar `ok`, que
   // es lo que alimenta gráficas, Pareto y recomendación.
-  const filas: Fila[] = unidadesDe(e)
+  const sinMarcar: Fila[] = unidadesDe(e)
     .map((g) => {
       // El factor de eficiencia es común a todo el catálogo: descuenta el ancho
       // de banda y los FLOPS nominales de cada unidad por igual.
@@ -194,6 +243,7 @@ export function calcular(e: Estado): Resultados {
         cap,
         cruces: cruces(modelo, hw, carga),
         unidadesCap,
+        dominada: false,
         kvRep: modelo.kv_heads > 0 ? modeloEn(modelo, hw).kv_heads / modelo.kv_heads : 1,
         soloAgentes,
         soloUsuarios,
@@ -201,26 +251,25 @@ export function calcular(e: Estado): Resultados {
       };
     });
 
-  const ok = filas.filter((f) => f.gpu.on && f.techos.viable);
+  // Las candidatas son las que entran en la comparación; sobre ellas se decide
+  // cuáles quedan dominadas según lo que mide el modo vigente.
+  const esCandidata = (f: Fila) => f.gpu.on && f.techos.viable;
+  const candidatas = sinMarcar.filter(esCandidata);
+  const dominadas = dominadasDe(candidatas, e.modo);
+  const filas: Fila[] = sinMarcar.map((f) => (dominadas.has(f.gpu.id) ? { ...f, dominada: true } : f));
+  const ok = filas.filter(esCandidata);
 
-  // Frente de Pareto en costo/TPOT: nadie la domina en ambas a la vez.
+  // Frente de Pareto en costo/TPOT: lo que nadie domina en ambas a la vez. Es el de
+  // dimensionar aunque el modo vigente sea otro, porque es el que dibuja esa gráfica.
+  const dominadasEnCosto = e.modo === "dimensionar" ? dominadas : dominadasDe(candidatas, "dimensionar");
   const pareto = ok
     .filter(dibujable)
-    .filter(
-      (f, _i, arr) =>
-        !arr.some(
-          (o) =>
-            o !== f &&
-            o.dim.costo_hora <= f.dim.costo_hora &&
-            o.dim.tpot_ms <= f.dim.tpot_ms &&
-            (o.dim.costo_hora < f.dim.costo_hora || o.dim.tpot_ms < f.dim.tpot_ms),
-        ),
-    )
+    .filter((f) => !dominadasEnCosto.has(f.gpu.id))
     .sort((a, b) => a.dim.tpot_ms - b.dim.tpot_ms);
 
-  const candidatas = e.modo === "dimensionar" ? ok.filter(dibujable) : ok;
-  const mejor = candidatas.length
-    ? candidatas.reduce((a, b) =>
+  const aspirantes = e.modo === "dimensionar" ? ok.filter(dibujable) : ok;
+  const mejor = aspirantes.length
+    ? aspirantes.reduce((a, b) =>
         e.modo === "dimensionar"
           ? b.dim.costo_hora < a.dim.costo_hora
             ? b

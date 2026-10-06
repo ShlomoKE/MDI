@@ -237,6 +237,12 @@ const es = {
     colCuello: "Cuello",
     masBarata: "más barata",
     masCapacidad: "más capacidad",
+    /** La etiqueta de una opción que otra supera, y por qué: una frase por modo. */
+    dominada: "dominada",
+    dominadaDim:
+      "Otra opción no cuesta más ni es más lenta, y es mejor en alguna de las dos: esta ya no conviene.",
+    dominadaCap:
+      "Otra opción no cuesta más ni admite menos usuarios, y es mejor en alguna de las dos: esta ya no conviene.",
     incluir: (gpu: string) => `Incluir ${gpu} en la comparación`,
     eliminar: (gpu: string) => `Eliminar ${gpu} del catálogo`,
     precioDe: (gpu: string) => `Precio por hora de ${gpu}`,
@@ -269,6 +275,7 @@ const es = {
     slo: (n: string) => `SLO ${n} ms`,
     leyendaGPU: "GPU suelta",
     leyendaChasis: "Chasis",
+    leyendaDominada: "dominada",
     vacioPareto: "Ningún hardware del catálogo admite esta configuración.",
     vacioFrontera: (unidades: string) =>
       `Ningún hardware del catálogo sostiene esta carga con ${unidades}.`,
@@ -597,6 +604,12 @@ const en: Textos = {
     colCuello: "Bound by",
     masBarata: "cheapest",
     masCapacidad: "most capacity",
+    /** The tag of an option that another one beats, and why: one sentence per mode. */
+    dominada: "dominated",
+    dominadaDim:
+      "Another option costs no more and is no slower, and is better on at least one of the two: this one no longer pays off.",
+    dominadaCap:
+      "Another option costs no more and fits no fewer users, and is better on at least one of the two: this one no longer pays off.",
     incluir: (gpu: string) => `Include ${gpu} in the comparison`,
     eliminar: (gpu: string) => `Remove ${gpu} from the catalogue`,
     precioDe: (gpu: string) => `Hourly price of ${gpu}`,
@@ -629,6 +642,7 @@ const en: Textos = {
     slo: (n: string) => `SLO ${n} ms`,
     leyendaGPU: "Single GPU",
     leyendaChasis: "Chassis",
+    leyendaDominada: "dominated",
     vacioPareto: "No hardware in the catalogue supports this configuration.",
     vacioFrontera: (unidades: string) =>
       `No hardware in the catalogue sustains this load with ${unidades}.`,

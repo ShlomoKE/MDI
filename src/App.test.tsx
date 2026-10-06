@@ -13,10 +13,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import { filasCSV } from "./components/Calculadora";
 import DocumentoEs from "./contenido/documento.mdx";
 import DocumentoEn from "./contenido/documento.en.mdx";
 import { CHASIS, GPUS, MODELOS, REFERENCIA_CHASIS } from "./lib/catalogos";
 import { fmt, fmtGB, usd } from "./lib/formato";
+import { calcular, dibujable } from "./lib/resultados";
 import { serializar, leer, ESTADO_INICIAL, type Estado } from "./lib/urlEstado";
 import type { Idioma } from "./i18n/idioma";
 import { TEXTOS } from "./i18n/textos";
@@ -47,6 +49,20 @@ function montar(idioma: Idioma = "es") {
     raiz.render(<App idioma={idioma} Documento={idioma === "en" ? DocumentoEn : DocumentoEs} />);
   });
 }
+
+/** Monta la página con una query dada, como si el lector hubiera abierto un enlace. */
+function abrir(query: string, idioma: Idioma = "es") {
+  window.history.replaceState(null, "", "/?" + query);
+  montar(idioma);
+}
+
+const filasDeTabla = () =>
+  contenedor.querySelectorAll("#calculadora .hidden.md\\:block table tbody tr");
+
+/** La cabecera de la tarjeta de la gráfica: su título y sus leyendas. */
+const cabeceraDeGrafica = (titulo: string) =>
+  Array.from(contenedor.querySelectorAll("#calculadora h3")).find((h) => h.textContent === titulo)!
+    .parentElement!;
 
 describe("la página monta sin errores", () => {
   it("renderiza el documento y la calculadora sin ensuciar la consola", () => {
@@ -184,20 +200,7 @@ describe("la página monta sin errores", () => {
 });
 
 describe("chasis completos", () => {
-  /** Monta la página con una query dada, como si el lector hubiera abierto un enlace. */
-  function abrir(query: string, idioma: Idioma = "es") {
-    window.history.replaceState(null, "", "/?" + query);
-    montar(idioma);
-  }
   afterEach(() => window.history.replaceState(null, "", "/"));
-
-  const filasDeTabla = () =>
-    contenedor.querySelectorAll("#calculadora .hidden.md\\:block table tbody tr");
-
-  /** La cabecera de la tarjeta de la gráfica: su título y sus leyendas. */
-  const cabeceraDeGrafica = (titulo: string) =>
-    Array.from(contenedor.querySelectorAll("#calculadora h3")).find((h) => h.textContent === titulo)!
-      .parentElement!;
 
   it("por defecto la tabla trae las GPUs sueltas y los chasis juntos", () => {
     montar();
@@ -404,6 +407,111 @@ describe("chasis completos", () => {
     ).map((th) => th.textContent);
     expect(cabeceras[0]).toBe("Chassis");
     expect(problemas, problemas.join(" | ")).toEqual([]);
+  });
+});
+
+describe("opciones dominadas", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  /** Los nombres de las filas de la tabla de escritorio que llevan la etiqueta, con su ayuda. */
+  const marcadasEnTabla = (ayuda: string) =>
+    Array.from(filasDeTabla())
+      .filter((tr) => tr.querySelector(`span[title="${ayuda}"]`))
+      .map((tr) => tr.querySelector("td span")!.textContent);
+
+  const esperadas = (e: Estado) =>
+    calcular(e)
+      .filas.filter((f) => f.dominada)
+      .map((f) => f.gpu.nombre);
+
+  it("al dimensionar, la tabla marca a las que otra supera, con su porqué", () => {
+    montar();
+    const debidas = esperadas(ESTADO_INICIAL);
+    // Premisa del arranque: hay opciones que otra supera (la H100 contra la H200).
+    expect(debidas.length).toBeGreaterThan(0);
+    expect(marcadasEnTabla(TEXTOS.es.tabla.dominadaDim)).toEqual(debidas);
+    expect(contenedor.querySelector("#calculadora table")?.textContent).toContain("dominada");
+    expect(problemas, problemas.join("\n")).toEqual([]);
+  });
+
+  it("al medir capacidad la marca sale del costo contra los usuarios que caben", () => {
+    abrir("modo=capacidad");
+    const debidas = esperadas({ ...ESTADO_INICIAL, modo: "capacidad" });
+    expect(debidas.length).toBeGreaterThan(0);
+    expect(marcadasEnTabla(TEXTOS.es.tabla.dominadaCap)).toEqual(debidas);
+    expect(marcadasEnTabla(TEXTOS.es.tabla.dominadaDim)).toEqual([]);
+  });
+
+  it("las tarjetas del móvil llevan la misma etiqueta", () => {
+    montar();
+    const tarjetas = Array.from(contenedor.querySelectorAll("#calculadora .md\\:hidden article"));
+    const marcadas = tarjetas
+      .filter((a) => a.querySelector(`span[title="${TEXTOS.es.tabla.dominadaDim}"]`))
+      .map((a) => a.querySelector("label span")!.textContent);
+    expect(marcadas).toEqual(esperadas(ESTADO_INICIAL));
+  });
+
+  it("la gráfica de costo dibuja huecas a las dominadas y lo dice en su leyenda", () => {
+    montar();
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    const huecas = grafica.querySelectorAll("g[tabindex] [stroke-width='1.8']");
+    const dominadas = calcular(ESTADO_INICIAL).ok.filter((f) => dibujable(f) && f.dominada);
+    expect(dominadas.length).toBeGreaterThan(0);
+    expect(huecas.length).toBe(dominadas.length);
+    expect(cabeceraDeGrafica("Costo contra latencia").textContent).toContain("dominada");
+  });
+
+  it("la frontera de capacidad también las dibuja huecas", () => {
+    abrir("modo=capacidad");
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    const huecas = grafica.querySelectorAll("g[tabindex] [stroke-width='1.8']");
+    const e: Estado = { ...ESTADO_INICIAL, modo: "capacidad" };
+    const dominadas = calcular(e).ok.filter((f) => f.frontera.length > 1 && f.dominada);
+    expect(dominadas.length).toBeGreaterThan(0);
+    expect(huecas.length).toBe(dominadas.length);
+    expect(cabeceraDeGrafica("Frontera de capacidad con al menos 12 GPUs").textContent).toContain(
+      "dominada",
+    );
+  });
+
+  it("la etiqueta de las dominadas también va en el aria-label de los puntos de la gráfica", () => {
+    montar();
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    const conAria = Array.from(grafica.querySelectorAll("g[tabindex]")).filter((g) =>
+      (g.getAttribute("aria-label") ?? "").endsWith(", dominada"),
+    );
+    expect(conAria).toHaveLength(esperadas(ESTADO_INICIAL).length);
+  });
+
+  it("sin ninguna dominada no hay etiquetas, puntos huecos ni leyenda", () => {
+    // Una sola opción en la comparación: nadie la supera.
+    abrir(serializar({ ...ESTADO_INICIAL, vista: "gpus", gpus: [GPUS[2]] }));
+    expect(filasDeTabla()).toHaveLength(1);
+    expect(marcadasEnTabla(TEXTOS.es.tabla.dominadaDim)).toEqual([]);
+    const grafica = contenedor.querySelector('#calculadora svg[role="img"]')!;
+    expect(grafica.querySelectorAll("g[tabindex] [stroke-width='1.8']")).toHaveLength(0);
+    expect(cabeceraDeGrafica("Costo contra latencia").textContent).not.toContain("dominada");
+  });
+
+  it("en inglés la etiqueta, su ayuda y la leyenda salen traducidas", () => {
+    abrir("", "en");
+    const debidas = esperadas(ESTADO_INICIAL);
+    expect(marcadasEnTabla(TEXTOS.en.tabla.dominadaDim)).toEqual(debidas);
+    expect(contenedor.querySelector("#calculadora table")?.textContent).toContain("dominated");
+    expect(contenedor.querySelector("#calculadora table")?.textContent).not.toContain("dominada");
+    expect(cabeceraDeGrafica("Cost against latency").textContent).toContain("dominated");
+  });
+
+  it("el CSV trae una columna «dominada» que dice lo mismo que la tabla", () => {
+    for (const modo of ["dimensionar", "capacidad"] as const) {
+      const e: Estado = { ...ESTADO_INICIAL, modo };
+      const r = calcular(e);
+      const [cabecera, ...filas] = filasCSV(e, r, modo === "dimensionar");
+      const col = cabecera.indexOf("dominada");
+      expect(col, `${modo}: falta la columna`).toBeGreaterThan(-1);
+      expect(filas.map((f) => f[col]), modo).toEqual(r.filas.map((f) => f.dominada));
+      expect(filas.some((f) => f[col] === true), `${modo}: ninguna marcada`).toBe(true);
+    }
   });
 });
 

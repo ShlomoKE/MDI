@@ -74,6 +74,19 @@ function PrecioInput({
   );
 }
 
+/** La etiqueta de una opción que otra supera; el porqué, según el modo, va de ayuda. */
+function EtiquetaDominada({ dim }: { dim: boolean }) {
+  const t = useTextos();
+  return (
+    <span
+      title={dim ? t.tabla.dominadaDim : t.tabla.dominadaCap}
+      className="text-xs px-1.5 py-0.5 rounded border border-linea text-suave whitespace-nowrap"
+    >
+      {t.tabla.dominada}
+    </span>
+  );
+}
+
 function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => void }) {
   const t = useTextos();
   return (
@@ -211,6 +224,7 @@ export function TablaGPUs(p: Props) {
                           {etiquetaMejor}
                         </span>
                       )}
+                      {f.dominada && <EtiquetaDominada dim={dim} />}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right mono whitespace-nowrap">
@@ -358,6 +372,7 @@ export function TablaGPUs(p: Props) {
                       {etiquetaMejor}
                     </span>
                   )}
+                  {f.dominada && <EtiquetaDominada dim={dim} />}
                   <BotonEliminar
                     nombre={f.gpu.nombre}
                     onClick={() => p.onEliminar(f.gpu.id)}

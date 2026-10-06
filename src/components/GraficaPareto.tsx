@@ -5,7 +5,7 @@
  * carga: en X el TPOT que logra, en Y lo que cuesta por hora la cantidad de
  * unidades que hacen falta. La banda de la derecha es la zona que incumple el
  * SLO. La línea punteada une el frente de Pareto: fuera de esa línea siempre hay
- * una opción mejor en ambos ejes.
+ * una opción mejor en ambos ejes, y esos puntos —los dominados— se dibujan huecos.
  */
 
 import { useTextos } from "../i18n/contexto";
@@ -179,12 +179,14 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            aria-label={t.graficas.puntoPareto(
-              f.gpu.nombre,
-              t.calculadora.unidades(esChasis(f.gpu) ? "chasis" : "gpus", String(f.dim.G)),
-              fmt(f.dim.tpot_ms, 1),
-              usd(f.dim.costo_hora),
-            )}
+            aria-label={
+              t.graficas.puntoPareto(
+                f.gpu.nombre,
+                t.calculadora.unidades(esChasis(f.gpu) ? "chasis" : "gpus", String(f.dim.G)),
+                fmt(f.dim.tpot_ms, 1),
+                usd(f.dim.costo_hora),
+              ) + (f.dominada ? `, ${t.tabla.dominada}` : "")
+            }
             style={{ cursor: "pointer" }}
           >
             {/* área de contacto generosa para el dedo en pantallas táctiles */}
@@ -196,13 +198,14 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
               chasis={esChasis(f.gpu)}
               fill={col}
               opacity={hv ? 1 : 0.88}
+              hueco={f.dominada}
             />
             <text
               x={et.x}
               y={et.y}
               textAnchor={et.ancla}
               fontSize="10"
-              fill={COLOR.tinta}
+              fill={f.dominada ? COLOR.suave : COLOR.tinta}
               fontWeight={hv ? 600 : 400}
               {...HALO_TEXTO}
             >

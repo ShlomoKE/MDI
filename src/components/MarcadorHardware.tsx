@@ -3,7 +3,8 @@
  *
  * El color ya dice qué restricción manda, así que la clase de hardware viaja en
  * la forma: círculo para una GPU, cuadrado para un chasis. Una forma y no un
- * segundo color, para que la diferencia se vea también sin distinguir colores.
+ * segundo color, para que la diferencia se vea también sin distinguir colores. Una
+ * opción dominada —otra la supera— se dibuja hueca: mismo borde, sin relleno.
  */
 
 import { useTextos } from "../i18n/contexto";
@@ -29,13 +30,26 @@ interface MarcadorProps {
   chasis: boolean;
   fill: string;
   opacity: number;
+  /** Sin relleno, solo el borde del color: la opción está dominada. */
+  hueco?: boolean;
 }
 
-/** Un punto de la gráfica: círculo si es una GPU, cuadrado redondeado si es un chasis. */
-export function Marcador({ x, y, r, chasis, fill, opacity }: MarcadorProps) {
-  if (!chasis) return <circle cx={x} cy={y} r={r} fill={fill} opacity={opacity} />;
+/** El grosor del borde de un punto hueco. */
+const BORDE_HUECO = 1.8;
+
+/**
+ * Un punto de la gráfica: círculo si es una GPU, cuadrado redondeado si es un chasis.
+ * El hueco se dibuja un poco más chico por dentro, porque el borde engorda hacia
+ * afuera: el tamaño total es el mismo y no salta al enfocar un punto.
+ */
+export function Marcador({ x, y, r, chasis, fill, opacity, hueco = false }: MarcadorProps) {
+  const trazo = hueco
+    ? { fill: COLOR.superficie, stroke: fill, strokeWidth: BORDE_HUECO }
+    : { fill };
+  const radio = hueco ? r - BORDE_HUECO / 2 : r;
+  if (!chasis) return <circle cx={x} cy={y} r={radio} opacity={opacity} {...trazo} />;
   // Lado √π·r: la misma área que el círculo de radio r.
-  const medio = r * 0.886;
+  const medio = radio * 0.886;
   return (
     <rect
       x={x - medio}
@@ -43,8 +57,8 @@ export function Marcador({ x, y, r, chasis, fill, opacity }: MarcadorProps) {
       width={2 * medio}
       height={2 * medio}
       rx={1.5}
-      fill={fill}
       opacity={opacity}
+      {...trazo}
     />
   );
 }
@@ -89,5 +103,18 @@ export function LeyendaHardware({ conLinea }: { conLinea: boolean }) {
         {t.graficas.leyendaChasis}
       </span>
     </>
+  );
+}
+
+/** La muestra de las opciones dominadas: un punto hueco. */
+export function LeyendaDominada() {
+  const t = useTextos();
+  return (
+    <span className="flex items-center gap-1.5">
+      <svg width={12} height={12} aria-hidden="true" className="shrink-0">
+        <Marcador x={6} y={6} r={4} chasis={false} fill={COLOR.suave} opacity={1} hueco />
+      </svg>
+      {t.graficas.leyendaDominada}
+    </span>
   );
 }

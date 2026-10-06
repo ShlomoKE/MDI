@@ -527,10 +527,16 @@ fit.
 ## How to read the calculator
 
 In **sizing** mode each point on the chart is a GPU (a circle) or a chassis
-(a square): on the horizontal axis the TPOT it achieves, on the vertical what the number of units
-required costs per hour. The band on the right is the zone that violates the
-SLO. The dotted line joins the Pareto front — off it there is always a better
-option in both dimensions at once.
+(a square): on the horizontal axis the TPOT it achieves, on the vertical what
+the number of units required costs per hour. The band on the right is the zone
+that violates the SLO. The dotted line joins the Pareto front — off it there is
+always a better option in both dimensions at once.
+
+The options off that line are the **dominated** ones: another costs the same or
+less and is no slower, and is better on at least one of the two. They carry the
+*dominated* tag in the table and a hollow dot on the chart, because they are no
+longer worth a look. In capacity mode the idea is the same, but cost is compared
+against the users that fit alongside the agents you fixed.
 
 The pressure bars in the table show how many units —GPUs or chassis— each
 constraint demands on its own. The filled bar is the one that sets the total;

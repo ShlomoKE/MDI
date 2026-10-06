@@ -2,7 +2,8 @@
  * La frontera de capacidad: agentes contra usuarios, con el hardware fijo.
  *
  * Cada curva es una GPU (línea continua, punto redondo) o un chasis (línea a
- * trazos, punto cuadrado). Todos los puntos sobre ella saturan el sistema, así
+ * trazos, punto cuadrado); el punto es hueco si otra opción la supera a la vez en
+ * costo y en usuarios que caben. Todos los puntos sobre la curva saturan el sistema, así
  * que no hay un óptimo: es el intercambio real entre atender agentes y atender
  * usuarios, y la pendiente es κ. A diferencia del prototipo la curva se
  * muestrea llamando al motor, no se dibuja como recta: cuando el cuello cambia
@@ -223,7 +224,10 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
             onFocus={() => setFoco(f.gpu.id)}
             onBlur={() => setFoco(null)}
             tabIndex={0}
-            aria-label={t.graficas.puntoFrontera(f.gpu.nombre, detalle, fmt(Ua))}
+            aria-label={
+              t.graficas.puntoFrontera(f.gpu.nombre, detalle, fmt(Ua)) +
+              (f.dominada ? `, ${t.tabla.dominada}` : "")
+            }
             style={{ cursor: "pointer" }}
           >
             <circle cx={x} cy={y} r={26} fill="transparent" />
@@ -245,6 +249,7 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
               chasis={esChasis(f.gpu)}
               fill={col}
               opacity={hv ? 1 : 0.88}
+              hueco={f.dominada}
             />
             {enCol ? (
               /* El nombre queda fijo junto a la recta y el detalle del enfoque crece
@@ -255,7 +260,7 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
                 y={linea}
                 textAnchor={alDerecha ? "start" : "end"}
                 fontSize="10"
-                fill={COLOR.tinta}
+                fill={f.dominada ? COLOR.suave : COLOR.tinta}
                 fontWeight={hv ? 600 : 400}
                 {...HALO_TEXTO}
               >
@@ -279,7 +284,7 @@ export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
                   y={etiqueta!.y}
                   textAnchor={etiqueta!.ancla}
                   fontSize="10"
-                  fill={COLOR.tinta}
+                  fill={f.dominada ? COLOR.suave : COLOR.tinta}
                   fontWeight={hv ? 600 : 400}
                   {...HALO_TEXTO}
                 >

@@ -56,6 +56,15 @@ try {
      `la gráfica de costo mezcla GPUs (${formas.circulos} círculos) y chasis (${formas.cuadrados} cuadrados)`);
   ok(texto.includes('GPU suelta'), 'la leyenda distingue GPU suelta de chasis');
 
+  // Las opciones que otra supera en costo y en latencia llevan la etiqueta
+  // «dominada» en la tabla y un punto hueco en la gráfica, con su leyenda.
+  const marcadas = await page.$$eval('#calculadora table tbody tr', (filas) =>
+    filas.filter((tr) => tr.querySelector('span[title^="Otra opción no cuesta más ni es más lenta"]')).length);
+  const huecas = await page.$$eval('#calculadora svg[role="img"] g[tabindex] [stroke-width="1.8"]', (n) => n.length);
+  ok(marcadas > 0, `la tabla marca ${marcadas} opciones como dominadas`);
+  ok(huecas === marcadas, `la gráfica dibuja huecas esas mismas (${huecas} de ${marcadas})`);
+  ok(texto.includes('dominada'), 'la leyenda explica el punto hueco');
+
   // Interacción: cambiar de modo y comprobar que la URL lo refleja. El clic va
   // por el DOM y no por coordenadas: la calculadora acaba de montarse y sigue
   // asentando el layout, así que un clic posicional aterriza donde el botón ya
@@ -75,6 +84,11 @@ try {
   }));
   ok(curvas.continuas > 0 && curvas.atrazos > 0,
      `la frontera dibuja GPUs con línea continua (${curvas.continuas}) y chasis a trazos (${curvas.atrazos})`);
+  const marcadasCap = await page.$$eval('#calculadora table tbody tr', (filas) =>
+    filas.filter((tr) => tr.querySelector('span[title^="Otra opción no cuesta más ni admite menos usuarios"]')).length);
+  const huecasCap = await page.$$eval('#calculadora svg[role="img"] g[tabindex] [stroke-width="1.8"]', (n) => n.length);
+  ok(marcadasCap > 0 && huecasCap === marcadasCap,
+     `en capacidad la tabla marca ${marcadasCap} dominadas y la frontera dibuja ${huecasCap} huecas`);
 
   // ---------- 2. Móvil 360px: tarjetas y cero scroll horizontal ----------
   const movil = await browser.newPage();

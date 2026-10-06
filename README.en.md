@@ -231,7 +231,9 @@ now counts chassis, and the cost is $G$ times the price of the whole chassis. Th
 calculator starts by comparing single GPUs and chassis in the same table and on
 the same charts —circles for GPUs, squares for chassis— and a selector shows each
 class on its own; when they are compared together in capacity mode, $G$ counts
-GPUs and the chassis, which is only bought whole, rounds up. $\sigma$ is the
+GPUs and the chassis, which is only bought whole, rounds up. Options that another
+one beats at once on cost and on latency (or, when measuring capacity, on the
+users that fit) carry the *dominated* tag and a hollow dot. $\sigma$ is the
 fraction of the aggregate bandwidth and FLOPS that survives inter-GPU
 communication: an assumption, not a measurement, although
 `scripts/estimar_sigma.py` shows where each value comes from. The hourly price of
@@ -305,11 +307,11 @@ of overhead, efficiency 0.5— so the two can be compared without touching a sin
 field.
 
 The tests are split across five files: `motor.test.ts` (parity with Python and
-model invariants), `resultados.test.ts` (what is compared and with how many units
-in capacity mode), `etiquetas.test.ts` (how the chart labels are laid out so they
-do not overlap), `formato.test.ts` (the SVG palette tied to the CSS tokens and
-WCAG AA contrast) and `App.test.tsx` (mounts the whole page in jsdom and fails if
-anything writes to the console).
+model invariants), `resultados.test.ts` (what is compared, with how many units in
+capacity mode and which options end up dominated), `etiquetas.test.ts` (how the
+chart labels are laid out so they do not overlap), `formato.test.ts` (the SVG
+palette tied to the CSS tokens and WCAG AA contrast) and `App.test.tsx` (mounts
+the whole page in jsdom and fails if anything writes to the console).
 
 ## Development
 
@@ -329,7 +331,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # in another terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 35 checks in Chrome
+node scripts/e2e.mjs                          # 40 checks in Chrome
 node scripts/comparar.mjs                     # the acceptance criterion
 
 npm i -D --no-save lighthouse chrome-launcher

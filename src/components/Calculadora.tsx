@@ -13,7 +13,7 @@ import Ecuacion from "./Ecuacion";
 import EditorCatalogo from "./EditorCatalogo";
 import GraficaFrontera from "./GraficaFrontera";
 import GraficaPareto from "./GraficaPareto";
-import { LeyendaHardware } from "./MarcadorHardware";
+import { LeyendaDominada, LeyendaHardware } from "./MarcadorHardware";
 import TablaGPUs from "./TablaGPUs";
 import { Boton, Campo, Fijo, Kpi, Seccion } from "./Campos";
 import {
@@ -37,7 +37,7 @@ import {
   usd,
   vramDe,
 } from "../lib/formato";
-import { calcular } from "../lib/resultados";
+import { calcular, dibujable } from "../lib/resultados";
 import { ESTADO_INICIAL, enlace, leer, serializar, type Estado, type Modo } from "../lib/urlEstado";
 import { useTextos } from "../i18n/contexto";
 import { nombreCuello } from "../i18n/cuello";
@@ -87,10 +87,12 @@ export function Calculadora() {
   // El foco puede caer en una unidad excluida de la comparación: sigue teniendo
   // fila en la tabla y su detalle es igual de válido.
   const activo = r.filas.find((f) => f.gpu.id === foco && f.techos.viable) ?? r.mejor;
-  // Las formas de las gráficas distinguen GPUs de chasis; la leyenda solo hace
-  // falta cuando lo que se dibuja trae de las dos clases.
+  // Las formas de las gráficas distinguen GPUs de chasis y el punto hueco marca a
+  // las dominadas; cada leyenda solo hace falta si lo que se dibuja la usa.
+  const dibujadas = dim ? r.ok.filter(dibujable) : r.ok.filter((f) => f.frontera.length > 1);
   const hayMezcla =
-    r.ok.some((f) => esChasis(f.gpu)) && r.ok.some((f) => !esChasis(f.gpu));
+    dibujadas.some((f) => esChasis(f.gpu)) && dibujadas.some((f) => !esChasis(f.gpu));
+  const hayDominadas = dibujadas.some((f) => f.dominada);
   const cuelloActivo = activo
     ? dim
       ? activo.dim.cuello
@@ -336,6 +338,7 @@ export function Calculadora() {
               </h3>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-suave">
                 {hayMezcla && <LeyendaHardware conLinea={!dim} />}
+                {hayDominadas && <LeyendaDominada />}
                 {(["memoria", "latencia", "computo"] as const).map((k) => (
                   <span key={k} className="flex items-center gap-1.5">
                     <i
@@ -532,7 +535,7 @@ export function Calculadora() {
  * La tabla exportada es "tidy": cada fila lleva sus propios parámetros de
  * escenario, así que varios CSV se pueden concatenar sin perder el contexto.
  */
-function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celda[][] {
+export function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celda[][] {
   const m = r.modelo;
   const escenario: Celda[] = [
     m.nombre, m.N, m.capas_atn, m.kv_heads, m.head_dim, m.quant_pesos, m.quant_cache,
@@ -561,6 +564,7 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
         ...colsUnidad,
         "viable", "motivo", "G", "cuello", "G_memoria", "G_latencia", "G_computo",
         "B_por_unidad", "tpot_ms", "tok_s_sesion", "throughput_tok_s", "costo_hora", "cumple_slo",
+        "dominada",
         ...colsEscenario,
       ],
       ...r.filas.map((f): Celda[] => [
@@ -570,6 +574,7 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
         f.dim.viable ? f.dim.B : null, f.dim.viable ? f.dim.tpot_ms : null,
         f.dim.viable ? f.dim.tok_s_sesion : null, f.dim.viable ? f.dim.throughput : null,
         f.dim.viable ? f.dim.costo_hora : null, f.dim.viable ? f.dim.cumple_slo : null,
+        f.dominada,
         ...escenario,
       ]),
     ];
@@ -580,6 +585,7 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
       ...colsUnidad,
       "viable", "motivo", "G", "alcanza", "usuarios", "agentes_fijados", "solo_agentes",
       "solo_usuarios", "cuello", "B_por_unidad", "tpot_ms", "throughput_tok_s", "costo_hora",
+      "dominada",
       ...colsEscenario,
     ],
     ...r.filas.map((f): Celda[] => [
@@ -590,6 +596,7 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
       f.cap.alcanza ? f.cap.cuello : "", f.cap.alcanza ? f.cap.B : null,
       f.cap.alcanza ? f.cap.tpot_ms : null, f.cap.alcanza ? f.cap.throughput : null,
       f.cap.viable ? f.cap.costo_hora : null,
+      f.dominada,
       ...escenario,
     ]),
   ];

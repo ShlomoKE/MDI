@@ -230,8 +230,10 @@ chasis completo. La calculadora arranca comparando GPUs sueltas y chasis en la
 misma tabla y en las mismas gráficas —círculos para las GPUs, cuadrados para los
 chasis— y un selector deja ver cada clase por separado; al compararlas juntas en
 el modo capacidad, $G$ cuenta GPUs y el chasis, que solo se compra entero, se
-redondea hacia arriba. $\sigma$ es la fracción del ancho de banda y los FLOPS
-agregados que sobrevive a la comunicación entre GPUs: un supuesto, no una
+redondea hacia arriba. Las opciones que otra supera a la vez en costo y en
+latencia (o, al medir capacidad, en usuarios que caben) llevan la etiqueta
+*dominada* y un punto hueco. $\sigma$ es la fracción del ancho de banda y los
+FLOPS agregados que sobrevive a la comunicación entre GPUs: un supuesto, no una
 medición, aunque `scripts/estimar_sigma.py` enseña de dónde sale cada valor. El
 precio por hora de cada chasis sale de su precio de lista con una regla explícita
 (`horaria`, en `src/lib/catalogos.ts`), y cada uno lleva su fuente, su consumo y
@@ -305,18 +307,18 @@ overhead de 4 GB, eficiencia 0.5— para que los dos se puedan comparar sin toca
 un solo campo.
 
 Las pruebas se reparten en cinco archivos: `motor.test.ts` (paridad con Python e
-invariantes del modelo), `resultados.test.ts` (qué se compara y con cuántas
-unidades en el modo capacidad), `etiquetas.test.ts` (el acomodo de los nombres en
-las gráficas), `formato.test.ts` (la paleta de los SVG atada a los tokens de CSS
-y el contraste WCAG AA) y `App.test.tsx` (monta la página entera en jsdom y falla
-si algo escribe en la consola).
+invariantes del modelo), `resultados.test.ts` (qué se compara, con cuántas
+unidades en el modo capacidad y cuáles quedan dominadas), `etiquetas.test.ts` (el
+acomodo de los nombres en las gráficas), `formato.test.ts` (la paleta de los SVG
+atada a los tokens de CSS y el contraste WCAG AA) y `App.test.tsx` (monta la
+página entera en jsdom y falla si algo escribe en la consola).
 
 ## Desarrollo
 
 ```
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 655 pruebas, en los dos idiomas
+npm test           # 677 pruebas, en los dos idiomas
 npm run build      # cliente + servidor + prerenderizado, sale a dist/
 npm run preview    # sirve dist/ localmente
 ```
@@ -329,7 +331,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # en otra terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 35 comprobaciones en Chrome
+node scripts/e2e.mjs                          # 40 comprobaciones en Chrome
 node scripts/comparar.mjs                     # el criterio de aceptación
 
 npm i -D --no-save lighthouse chrome-launcher

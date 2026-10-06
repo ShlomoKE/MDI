@@ -527,10 +527,17 @@ de los usuarios que caben.
 ## Cómo leer la calculadora
 
 En el modo **dimensionar** cada punto de la gráfica es una GPU (un círculo) o un
-chasis (un cuadrado): en el eje horizontal el TPOT que logra, en el vertical lo que cuesta por hora la
-cantidad de unidades que hacen falta. La banda de la derecha es la zona que incumple el
-SLO. La línea punteada une el frente de Pareto — fuera de ella siempre hay una
-opción mejor en las dos dimensiones a la vez.
+chasis (un cuadrado): en el eje horizontal el TPOT que logra, en el vertical lo
+que cuesta por hora la cantidad de unidades que hacen falta. La banda de la
+derecha es la zona que incumple el SLO. La línea punteada une el frente de
+Pareto — fuera de ella siempre hay una opción mejor en las dos dimensiones a la
+vez.
+
+Las opciones fuera de esa línea son las **dominadas**: otra cuesta lo mismo o
+menos y no es más lenta, y es mejor en alguna de las dos cosas. Llevan la
+etiqueta *dominada* en la tabla y un punto hueco en la gráfica, porque ya no
+conviene mirarlas. En el modo capacidad la idea es la misma, pero se compara el
+costo con los usuarios que caben junto a los agentes fijados.
 
 Las barras de presión de la tabla muestran cuántas unidades —GPUs o chasis—
 exige cada restricción por separado. La barra llena es la que fija el total; las otras dos, atenuadas,
