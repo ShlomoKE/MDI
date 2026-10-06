@@ -8,12 +8,16 @@
  */
 
 import {
+  CHASIS,
   EFF_DEMO,
+  ESCALA_DEFECTO,
   GPUS,
   G_DEMO,
   MODELOS,
+  VISTAS,
   type GPUCatalogo,
   type ModeloCatalogo,
+  type Vista,
 } from "./catalogos";
 import { CARGA_DEMO } from "./catalogos";
 import { QUANT, type Quant } from "./motor";
@@ -22,6 +26,8 @@ export type Modo = "dimensionar" | "capacidad";
 
 export interface Estado {
   modo: Modo;
+  /** Qué catálogo de hardware se compara: GPUs sueltas, chasis o los dos. */
+  vista: Vista;
   /** U de humanos */
   Uh: number;
   /** C de humanos, tokens */
@@ -34,15 +40,18 @@ export interface Estado {
   overhead_gb: number;
   /** Factor de eficiencia, común a todas las GPUs. */
   eff: number;
-  /** GPUs por configuración en el modo capacidad. */
+  /** Unidades —GPUs o chasis— por configuración en el modo capacidad. */
   G: number;
   modeloId: string;
   modelos: ModeloCatalogo[];
   gpus: GPUCatalogo[];
+  /** Chasis completos: unidades de n GPUs que sirven una réplica con TP. */
+  chasis: GPUCatalogo[];
 }
 
 export const ESTADO_INICIAL: Estado = {
   modo: "dimensionar",
+  vista: "gpus",
   Uh: CARGA_DEMO.humanos.U,
   Ch: CARGA_DEMO.humanos.C,
   Ua: CARGA_DEMO.agentes.U,
@@ -54,6 +63,7 @@ export const ESTADO_INICIAL: Estado = {
   modeloId: MODELOS[0].id,
   modelos: MODELOS,
   gpus: GPUS,
+  chasis: CHASIS,
 };
 
 // --------------------------------------------------------------------------- //
@@ -123,7 +133,55 @@ function decodificarGPUs(s: string): GPUCatalogo[] | null {
       tflops: s2n(p[3], 900),
       precio_hora: s2n(p[4], 1),
       eff: EFF_DEMO,
+      n: 1,
+      escala: 1,
       on: p[5] !== "0",
+    });
+  }
+  return out;
+}
+
+/**
+ * Los chasis llevan dos campos más que una GPU —cuántas GPUs trae y la escala del
+ * paralelismo tensorial—, así que viajan en su propio parámetro: el de las GPUs
+ * no cambia de formato y los enlaces que ya se compartieron siguen abriendo igual.
+ */
+function codificarChasis(chasis: GPUCatalogo[]): string {
+  return chasis
+    .map((g) =>
+      [
+        codificarNombre(g.nombre),
+        n2s(g.n),
+        n2s(g.vram_gb),
+        n2s(g.bw_gbs),
+        n2s(g.tflops),
+        n2s(g.precio_hora),
+        n2s(g.escala),
+        g.on ? "1" : "0",
+      ].join(SEP_CAMPO),
+    )
+    .join(SEP_FILA);
+}
+
+function decodificarChasis(s: string): GPUCatalogo[] | null {
+  const filas = s.split(SEP_FILA).filter(Boolean);
+  if (!filas.length) return null;
+  const out: GPUCatalogo[] = [];
+  for (let i = 0; i < filas.length; i++) {
+    const p = filas[i].split(SEP_CAMPO);
+    if (p.length < 8) return null;
+    out.push({
+      id: "c" + i,
+      nombre: decodificarNombre(p[0]) || "Chasis " + (i + 1),
+      // Una unidad tiene al menos una GPU y un número entero de ellas.
+      n: Math.max(1, Math.trunc(s2n(p[1], 8))),
+      vram_gb: s2n(p[2], 80),
+      bw_gbs: s2n(p[3], 2000),
+      tflops: s2n(p[4], 900),
+      precio_hora: s2n(p[5], 10),
+      escala: Math.min(1, Math.max(0.05, s2n(p[6], ESCALA_DEFECTO))),
+      eff: EFF_DEMO,
+      on: p[7] !== "0",
     });
   }
   return out;
@@ -175,6 +233,7 @@ function decodificarModelos(s: string): ModeloCatalogo[] | null {
 export function serializar(e: Estado): string {
   const q = new URLSearchParams();
   if (e.modo !== ESTADO_INICIAL.modo) q.set("modo", "capacidad");
+  if (e.vista !== ESTADO_INICIAL.vista) q.set("vista", e.vista);
   const escalares: Array<[string, number, number]> = [
     ["uh", e.Uh, ESTADO_INICIAL.Uh],
     ["ch", e.Ch, ESTADO_INICIAL.Ch],
@@ -194,6 +253,9 @@ export function serializar(e: Estado): string {
   const gpusCod = codificarGPUs(e.gpus);
   if (gpusCod !== codificarGPUs(GPUS)) q.set("gpus", gpusCod);
 
+  const chasisCod = codificarChasis(e.chasis);
+  if (chasisCod !== codificarChasis(CHASIS)) q.set("ch", chasisCod);
+
   // El id importa solo como índice dentro del catálogo vigente.
   const idx = e.modelos.findIndex((m) => m.id === e.modeloId);
   if (idx > 0) q.set("m", String(idx));
@@ -206,14 +268,17 @@ export function leer(query: string): Estado {
 
   const modelos = q.has("mods") ? decodificarModelos(q.get("mods")!) : null;
   const gpus = q.has("gpus") ? decodificarGPUs(q.get("gpus")!) : null;
+  const chasis = q.has("ch") ? decodificarChasis(q.get("ch")!) : null;
   const catModelos = modelos ?? MODELOS;
   const catGpus = gpus ?? GPUS;
+  const catChasis = chasis ?? CHASIS;
 
   const idx = Math.trunc(s2n(q.get("m") ?? undefined, 0));
   const seleccion = catModelos[idx] ?? catModelos[0];
 
   return {
     modo: q.get("modo") === "capacidad" ? "capacidad" : "dimensionar",
+    vista: VISTAS.find((v) => v === q.get("vista")) ?? ESTADO_INICIAL.vista,
     Uh: Math.max(0, s2n(q.get("uh") ?? undefined, ESTADO_INICIAL.Uh)),
     Ch: Math.max(0, s2n(q.get("ch") ?? undefined, ESTADO_INICIAL.Ch)),
     Ua: Math.max(0, s2n(q.get("ua") ?? undefined, ESTADO_INICIAL.Ua)),
@@ -225,6 +290,7 @@ export function leer(query: string): Estado {
     modeloId: seleccion.id,
     modelos: catModelos,
     gpus: catGpus,
+    chasis: catChasis,
   };
 }
 

@@ -1,5 +1,5 @@
 /**
- * Editor del catálogo: agregar, editar y eliminar GPUs y modelos.
+ * Editor del catálogo: agregar, editar y eliminar GPUs, chasis y modelos.
  *
  * El prototipo solo dejaba tocar el precio. Aquí se puede cambiar cualquier
  * campo, meter hardware que no venía en la lista y borrar lo que sobra. Todo
@@ -10,7 +10,16 @@
 import { useState, type ReactNode } from "react";
 
 import { Boton, Numero, Texto } from "./Campos";
-import { GPUS, MODELOS, gpuNueva, modeloNuevo, type GPUCatalogo, type ModeloCatalogo } from "../lib/catalogos";
+import {
+  CHASIS,
+  GPUS,
+  MODELOS,
+  chasisNuevo,
+  gpuNueva,
+  modeloNuevo,
+  type GPUCatalogo,
+  type ModeloCatalogo,
+} from "../lib/catalogos";
 import { QUANTS, type Quant } from "../lib/motor";
 import { enGB, enKB } from "../lib/formato";
 import { KVt, Pm } from "../lib/motor";
@@ -18,9 +27,11 @@ import { useTextos } from "../i18n/contexto";
 
 interface Props {
   gpus: GPUCatalogo[];
+  chasis: GPUCatalogo[];
   modelos: ModeloCatalogo[];
   modeloId: string;
   onGpus: (g: GPUCatalogo[]) => void;
+  onChasis: (c: GPUCatalogo[]) => void;
   onModelos: (m: ModeloCatalogo[], modeloId?: string) => void;
 }
 
@@ -28,13 +39,19 @@ interface Props {
 let contador = 0;
 const nuevoId = (prefijo: string) => `${prefijo}-${Date.now().toString(36)}-${contador++}`;
 
-export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: Props) {
+export function EditorCatalogo({ gpus, chasis, modelos, modeloId, onGpus, onChasis, onModelos }: Props) {
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"gpus" | "modelos">("gpus");
+  const [pestana, setPestana] = useState<"gpus" | "chasis" | "modelos">("gpus");
 
   const editarGpu = (id: string, cambios: Partial<GPUCatalogo>) =>
     onGpus(gpus.map((g) => (g.id === id ? { ...g, ...cambios } : g)));
+
+  const editarChasis = (id: string, cambios: Partial<GPUCatalogo>) =>
+    onChasis(chasis.map((c) => (c.id === id ? { ...c, ...cambios } : c)));
+
+  // Un chasis tiene al menos una GPU y un número entero de ellas.
+  const fijarN = (id: string, v: number) => editarChasis(id, { n: Math.max(1, Math.round(v)) });
 
   const editarModelo = (id: string, cambios: Partial<ModeloCatalogo>) =>
     onModelos(modelos.map((m) => (m.id === id ? { ...m, ...cambios } : m)));
@@ -62,7 +79,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
       >
         <span className="rotulo text-tinta">{t.catalogo.titulo}</span>
         <span className="text-xs text-suave">
-          {t.catalogo.resumen(gpus.length, modelos.length)} {abierto ? "▲" : "▼"}
+          {t.catalogo.resumen(gpus.length, chasis.length, modelos.length)} {abierto ? "▲" : "▼"}
         </span>
       </button>
 
@@ -73,6 +90,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
               {(
                 [
                   ["gpus", t.catalogo.pestanaGPUs],
+                  ["chasis", t.catalogo.pestanaChasis],
                   ["modelos", t.catalogo.pestanaModelos],
                 ] as Array<[typeof pestana, string]>
               ).map(([k, l]) => (
@@ -96,6 +114,15 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                     {t.catalogo.agregarGPU}
                   </Boton>
                   <Boton variante="sutil" onClick={() => onGpus(GPUS)} titulo={t.catalogo.tituloRestaurar}>
+                    {t.catalogo.restaurar}
+                  </Boton>
+                </>
+              ) : pestana === "chasis" ? (
+                <>
+                  <Boton onClick={() => onChasis([...chasis, chasisNuevo(nuevoId("c"))])}>
+                    {t.catalogo.agregarChasis}
+                  </Boton>
+                  <Boton variante="sutil" onClick={() => onChasis(CHASIS)} titulo={t.catalogo.tituloRestaurar}>
                     {t.catalogo.restaurar}
                   </Boton>
                 </>
@@ -141,7 +168,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                         className="rotulo font-medium pb-1.5 px-1"
                         style={{ textAlign: i === 0 ? "left" : "right" }}
                       >
-                        {h}
+                        {h || <span className="sr-only">{t.catalogo.colAcciones}</span>}
                       </th>
                     ))}
                   </tr>
@@ -178,6 +205,69 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                   ))}
                 </tbody>
               </table>
+            ) : pestana === "chasis" ? (
+              <table className="w-full text-sm" style={{ minWidth: 820 }}>
+                <thead>
+                  <tr className="text-suave">
+                    {[
+                      t.catalogo.colNombre,
+                      t.catalogo.colNGPUs,
+                      t.catalogo.colVRAMPorGPU,
+                      t.catalogo.colAnchoPorGPU,
+                      t.catalogo.colTFLOPSPorGPU,
+                      t.catalogo.colEscala,
+                      t.catalogo.colPrecioChasis,
+                      "",
+                    ].map((h, i) => (
+                      <th
+                        key={i}
+                        scope="col"
+                        className="rotulo font-medium pb-1.5 px-1"
+                        style={{ textAlign: i === 0 ? "left" : "right" }}
+                      >
+                        {h || <span className="sr-only">{t.catalogo.colAcciones}</span>}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {chasis.map((c) => (
+                    <tr key={c.id} className="border-t border-linea">
+                      <td className="py-1.5 px-1 min-w-40">
+                        <Texto valor={c.nombre} set={(v) => editarChasis(c.id, { nombre: v })} etiqueta={t.catalogo.nombreChasis} />
+                      </td>
+                      <td className="py-1.5 px-1 w-16">
+                        <Numero valor={c.n} set={(v) => fijarN(c.id, v)} etiqueta={t.catalogo.nGPUsDe(c.nombre)} min={1} />
+                      </td>
+                      <td className="py-1.5 px-1 w-24">
+                        <Numero valor={c.vram_gb} set={(v) => editarChasis(c.id, { vram_gb: v })} etiqueta={t.catalogo.vramDe(c.nombre)} paso={8} />
+                      </td>
+                      <td className="py-1.5 px-1 w-24">
+                        <Numero valor={c.bw_gbs} set={(v) => editarChasis(c.id, { bw_gbs: v })} etiqueta={t.catalogo.anchoDe(c.nombre)} paso={100} />
+                      </td>
+                      <td className="py-1.5 px-1 w-24">
+                        <Numero valor={c.tflops} set={(v) => editarChasis(c.id, { tflops: v })} etiqueta={t.catalogo.tflopsDe(c.nombre)} paso={50} />
+                      </td>
+                      <td className="py-1.5 px-1 w-16">
+                        <Numero valor={c.escala} set={(v) => editarChasis(c.id, { escala: v })} etiqueta={t.catalogo.escalaDe(c.nombre)} paso={0.05} min={0.05} max={1} />
+                      </td>
+                      <td className="py-1.5 px-1 w-24">
+                        <Numero valor={c.precio_hora} set={(v) => editarChasis(c.id, { precio_hora: v })} etiqueta={t.catalogo.precioDe(c.nombre)} paso={0.5} />
+                      </td>
+                      <td className="py-1.5 px-1 w-8 text-center">
+                        <button
+                          type="button"
+                          onClick={() => onChasis(chasis.filter((x) => x.id !== c.id))}
+                          aria-label={t.catalogo.eliminar(c.nombre)}
+                          className="text-suave hover:text-lat px-1 rounded transition-colors"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <table className="w-full text-sm" style={{ minWidth: 700 }}>
                 <thead>
@@ -199,7 +289,7 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                         className="rotulo font-medium pb-1.5 px-1"
                         style={{ textAlign: i === 0 || i === 7 ? "left" : "right" }}
                       >
-                        {h}
+                        {h || <span className="sr-only">{t.catalogo.colAcciones}</span>}
                       </th>
                     ))}
                   </tr>
@@ -301,7 +391,46 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
                     </div>
                   </article>
                 ))
-              : modelos.map((m) => (
+              : pestana === "chasis"
+                ? chasis.map((c) => (
+                    <article key={c.id} className="rounded border border-linea p-3">
+                      <div className="flex items-start gap-2 mb-2">
+                        <Texto
+                          valor={c.nombre}
+                          set={(v) => editarChasis(c.id, { nombre: v })}
+                          etiqueta={t.catalogo.nombreChasis}
+                        />
+                        <BotonIcono
+                          etiqueta={t.catalogo.eliminar(c.nombre)}
+                          onClick={() => onChasis(chasis.filter((x) => x.id !== c.id))}
+                          peligro
+                        >
+                          ×
+                        </BotonIcono>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                        <CampoTarjeta etiqueta={t.catalogo.campoNGPUs}>
+                          <Numero valor={c.n} set={(v) => fijarN(c.id, v)} etiqueta={t.catalogo.nGPUsDe(c.nombre)} min={1} />
+                        </CampoTarjeta>
+                        <CampoTarjeta etiqueta={t.catalogo.campoEscala}>
+                          <Numero valor={c.escala} set={(v) => editarChasis(c.id, { escala: v })} etiqueta={t.catalogo.escalaDe(c.nombre)} paso={0.05} min={0.05} max={1} />
+                        </CampoTarjeta>
+                        <CampoTarjeta etiqueta={t.catalogo.campoVRAMPorGPU}>
+                          <Numero valor={c.vram_gb} set={(v) => editarChasis(c.id, { vram_gb: v })} etiqueta={t.catalogo.vramDe(c.nombre)} paso={8} />
+                        </CampoTarjeta>
+                        <CampoTarjeta etiqueta={t.catalogo.campoAnchoPorGPU}>
+                          <Numero valor={c.bw_gbs} set={(v) => editarChasis(c.id, { bw_gbs: v })} etiqueta={t.catalogo.anchoDe(c.nombre)} paso={100} />
+                        </CampoTarjeta>
+                        <CampoTarjeta etiqueta={t.catalogo.campoTFLOPSPorGPU}>
+                          <Numero valor={c.tflops} set={(v) => editarChasis(c.id, { tflops: v })} etiqueta={t.catalogo.tflopsDe(c.nombre)} paso={50} />
+                        </CampoTarjeta>
+                        <CampoTarjeta etiqueta={t.catalogo.campoPrecioChasis}>
+                          <Numero valor={c.precio_hora} set={(v) => editarChasis(c.id, { precio_hora: v })} etiqueta={t.catalogo.precioDe(c.nombre)} paso={0.5} />
+                        </CampoTarjeta>
+                      </div>
+                    </article>
+                  ))
+                : modelos.map((m) => (
                   <article key={m.id} className="rounded border border-linea p-3">
                     <div className="flex items-start gap-2 mb-2">
                       <Texto
@@ -349,7 +478,11 @@ export function EditorCatalogo({ gpus, modelos, modeloId, onGpus, onModelos }: P
           </div>
 
           <p className="text-xs text-suave mt-3 leading-relaxed">
-            {pestana === "gpus" ? t.catalogo.notaGPUs : t.catalogo.notaModelos}
+            {pestana === "gpus"
+              ? t.catalogo.notaGPUs
+              : pestana === "chasis"
+                ? t.catalogo.notaChasis
+                : t.catalogo.notaModelos}
           </p>
         </div>
       )}

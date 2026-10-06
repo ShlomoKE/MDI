@@ -10,6 +10,10 @@
  * Todas las unidades internas son SI: bytes, bytes/s, FLOP/s, segundos.
  * Las conversiones a GB, GB/s, TFLOPS y ms viven en la capa de presentación.
  *
+ * La unidad que se compra y se replica es una GPU suelta o un chasis completo
+ * de n GPUs (ver `GPU`). Las ecuaciones son las mismas para las dos: el chasis
+ * solo cambia los parámetros con que se alimentan.
+ *
  * Implementa:
  *   - TPOT con lote y las tres restricciones (memoria, latencia, cómputo)
  *   - Modo dimensionar: dada la carga, cuántas GPUs hacen falta
@@ -64,27 +68,60 @@ export const Pm = (m: Modelo): number => m.N * 1e9 * bW(m);
 export const KVt = (m: Modelo): number =>
   2 * m.capas_atn * m.kv_heads * m.head_dim * bKV(m);
 
-/** Hardware. `eff` descuenta el ancho de banda y los FLOPS nominales. */
+/**
+ * Hardware: la unidad que se compra y se replica. `eff` descuenta el ancho de
+ * banda y los FLOPS nominales.
+ *
+ * Una unidad es una GPU suelta (n=1) o un chasis completo (n>1): n GPUs que
+ * sirven UNA réplica del modelo con paralelismo tensorial, así que los pesos y
+ * el caché se reparten entre las n. Las ecuaciones no cambian; cambian los
+ * parámetros con que se alimentan:
+ *
+ *     Vt = n·V      W = n·σ·η·BW      F = n·σ·η·TFLOPS      O_total = n·O
+ *
+ * `vram_gb`, `bw_gbs` y `tflops` son POR GPU, tal como los publica el
+ * fabricante. `precio_hora` es el de la unidad COMPLETA.
+ */
 export interface GPU {
   nombre: string;
+  /** VRAM por GPU, GB */
   vram_gb: number;
-  /** ancho de banda nominal, GB/s */
+  /** ancho de banda nominal por GPU, GB/s */
   bw_gbs: number;
-  /** FLOPS pico en la precisión de cómputo, TFLOPS */
+  /** FLOPS pico en la precisión de cómputo, por GPU, TFLOPS */
   tflops: number;
-  /** USD/h — CAPEX amortizado + OPEX */
+  /** USD/h de la unidad — CAPEX amortizado + OPEX */
   precio_hora: number;
   eff: number;
+  /** n — GPUs que forman la unidad; mayor que 1 es un chasis. */
+  n: number;
+  /**
+   * σ — qué fracción del ancho de banda y los FLOPS agregados sobrevive a la
+   * comunicación entre las n GPUs. 1 es escalado perfecto; con n=1 no importa.
+   */
+  escala: number;
 }
 
-/** Vₜ — VRAM total en bytes. */
-export const Vt = (g: GPU): number => g.vram_gb * GB;
+/** Vₜ — VRAM total de la unidad en bytes. */
+export const Vt = (g: GPU): number => g.n * g.vram_gb * GB;
 
-/** W — ancho de banda efectivo, bytes/s. */
-export const W = (g: GPU): number => g.bw_gbs * 1e9 * g.eff;
+/** W — ancho de banda efectivo de la unidad, bytes/s. */
+export const W = (g: GPU): number => g.n * g.bw_gbs * 1e9 * g.eff * g.escala;
 
-/** F — FLOPS efectivos. */
-export const F = (g: GPU): number => g.tflops * 1e12 * g.eff;
+/** F — FLOPS efectivos de la unidad. */
+export const F = (g: GPU): number => g.n * g.tflops * 1e12 * g.eff * g.escala;
+
+/**
+ * El modelo tal como queda guardado en la unidad.
+ *
+ * Con paralelismo tensorial de n vías y menos de n cabezas de KV, el motor de
+ * inferencia no puede partir una cabeza: la replica en n/H GPUs, y el caché
+ * por token se multiplica por n/H. Es lo mismo que tener max(H, n) cabezas,
+ * que es como se expresa aquí para no tocar KVₜ. Con una GPU suelta, o con
+ * H ≥ n, devuelve el mismo objeto.
+ */
+export const modeloEn = (m: Modelo, g: GPU): Modelo =>
+  g.n > 1 && 0 < m.kv_heads && m.kv_heads < g.n ? { ...m, kv_heads: g.n } : m;
 
 /** Un perfil de uso: cuántos hay, qué tan activos están y cuánto contexto usan. */
 export interface Poblacion {
@@ -140,7 +177,9 @@ export interface Techos {
 }
 
 export function techos(m: Modelo, g: GPU, c: Carga): Techos {
-  const t_mem = Vt(g) - Pm(m) - c.overhead_gb * GB;
+  // El overhead del motor (grafos de CUDA, buffers, fragmentación) es por GPU:
+  // una unidad de n GPUs paga n veces.
+  const t_mem = Vt(g) - Pm(m) - c.overhead_gb * g.n * GB;
   const t_lat = slo(c) * W(g) - Pm(m);
   const b_comp = (slo(c) * F(g)) / (2 * m.N * 1e9);
 
@@ -221,7 +260,7 @@ export interface Dimensionamiento {
   G_mem: number;
   G_lat: number;
   G_comp: number;
-  /** lote resultante por GPU */
+  /** lote resultante por unidad (GPU o chasis) */
   B: number;
   tpot_ms: number;
   tok_s_sesion: number;
@@ -252,6 +291,7 @@ export function dimensionar(m: Modelo, g: GPU, c: Carga): Dimensionamiento {
   const t = techos(m, g, c);
   if (!t.viable) return dimVacio(g.nombre, t.motivo);
 
+  m = modeloEn(m, g);
   const bc = bytesCache(c, m);
   const G_mem = bc / t.memoria;
   const G_lat = bc / t.latencia;
@@ -330,6 +370,7 @@ export function capacidad(m: Modelo, g: GPU, c: Carga, G: number): Capacidad {
   const t = techos(m, g, c);
   if (!t.viable) return capVacia(g.nombre, t.motivo);
 
+  m = modeloEn(m, g);
   const h = c.humanos;
   const a = c.agentes;
   const por_agente = KVt(m) * a.D * a.C; // bytes por agente registrado
@@ -392,6 +433,7 @@ export interface Cruces {
  */
 export function cruces(m: Modelo, g: GPU, c: Carga): Cruces {
   const t = techos(m, g, c);
+  m = modeloEn(m, g);
   const den = slo(c) * F(g) * KVt(m);
   return {
     Ceq1_computo_latencia: den !== 0 ? (t.latencia * 2 * m.N * 1e9) / den : Infinity,
@@ -408,6 +450,7 @@ export function techosAbsolutos(
   g: GPU,
   contexto: number,
 ): { por_memoria: number; por_computo: number } {
+  m = modeloEn(m, g);
   return {
     por_memoria: W(g) / (KVt(m) * contexto),
     por_computo: F(g) / (2 * m.N * 1e9),

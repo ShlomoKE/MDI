@@ -1,13 +1,15 @@
 /**
  * Costo contra latencia, en SVG dibujado a mano.
  *
- * Cada punto es una GPU dimensionada para la carga: en X el TPOT que logra, en
- * Y lo que cuesta por hora la cantidad de unidades que hacen falta. La banda de
- * la derecha es la zona que incumple el SLO. La línea punteada une el frente de
- * Pareto: fuera de esa línea siempre hay una opción mejor en ambos ejes.
+ * Cada punto es una GPU o un chasis dimensionado para la carga: en X el TPOT
+ * que logra, en Y lo que cuesta por hora la cantidad de unidades que hacen
+ * falta. La banda de la derecha es la zona que incumple el SLO. La línea
+ * punteada une el frente de Pareto: fuera de esa línea siempre hay una opción
+ * mejor en ambos ejes.
  */
 
 import { useTextos } from "../i18n/contexto";
+import { esChasis } from "../lib/catalogos";
 import { COLOR, colorCuello, fmt, usd } from "../lib/formato";
 import { dibujable, type Fila } from "../lib/resultados";
 
@@ -160,7 +162,7 @@ export function GraficaPareto({ filas, pareto, slo_ms, foco, setFoco }: Props) {
             tabIndex={0}
             aria-label={t.graficas.puntoPareto(
               f.gpu.nombre,
-              String(f.dim.G),
+              t.calculadora.unidades(esChasis(f.gpu) ? "chasis" : "gpus", String(f.dim.G)),
               fmt(f.dim.tpot_ms, 1),
               usd(f.dim.costo_hora),
             )}

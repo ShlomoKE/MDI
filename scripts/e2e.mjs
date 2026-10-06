@@ -87,6 +87,34 @@ try {
   const secciones = await movil.$$eval('nav[aria-label="Secciones"] a', (n) => n.length);
   ok(secciones >= 9, `la navegación lista ${secciones} secciones`);
 
+  // ---------- 2b. Chasis: la vista nueva, también a 360px ----------
+  const chasisM = await browser.newPage();
+  await chasisM.setViewport({ width: 360, height: 740, isMobile: true, deviceScaleFactor: 2 });
+  const consolaC = [];
+  chasisM.on('console', (m) => { if (['error', 'warning'].includes(m.type())) consolaC.push(m.type() + ': ' + m.text()); });
+  chasisM.on('pageerror', (e) => consolaC.push('pageerror: ' + e.message));
+  await chasisM.goto(base + '/?vista=chasis#calculadora', { waitUntil: 'networkidle0' });
+  await chasisM.waitForSelector('#calculadora article', { timeout: 8000 });
+
+  const tarjetasC = await chasisM.$$eval('#calculadora article', (n) => n.length);
+  ok(tarjetasC === 5, `a 360px la vista de chasis lista ${tarjetasC} tarjetas (esperadas 5)`);
+  const textoC = await chasisM.$eval('#calculadora', (e) => e.textContent);
+  ok(/DGX H100/.test(textoC) && /8 GPUs/.test(textoC), 'las tarjetas de chasis nombran el chasis y sus GPUs');
+  const desbordeC = await chasisM.evaluate(() => ({ doc: document.documentElement.scrollWidth, win: window.innerWidth }));
+  ok(desbordeC.doc <= desbordeC.win + 1,
+     `sin scroll horizontal a 360px en la vista de chasis (doc ${desbordeC.doc} vs ventana ${desbordeC.win})`);
+
+  // El selector cambia la vista y la URL lo recuerda; el clic va por el DOM por
+  // la misma razón que el del modo.
+  await chasisM.evaluate(() => {
+    const grupo = document.querySelector('#calculadora [role="group"][aria-label="Qué hardware comparar"]');
+    Array.from(grupo.querySelectorAll('button')).find((b) => b.textContent === 'Ambos').click();
+  });
+  await chasisM.waitForFunction(() => location.search.includes('vista=ambos'), { timeout: 5000 });
+  ok(true, 'la vista se serializa en la URL');
+  const tarjetasAmbos = await chasisM.$$eval('#calculadora article', (n) => n.length);
+  ok(tarjetasAmbos === tarjetasC + 7, `Ambos suma las GPUs y los chasis (${tarjetasAmbos} = ${tarjetasC} + 7)`);
+
   // ---------- 3. La página en inglés ----------
   const ingles = await browser.newPage();
   await ingles.setViewport({ width: 1440, height: 900 });
@@ -102,7 +130,13 @@ try {
 
   const hreflang = await ingles.$$eval('link[rel="alternate"]', (n) =>
     n.map((l) => l.getAttribute('hreflang') + '=' + l.getAttribute('href')));
-  ok(hreflang.includes('es=/') && hreflang.includes('en=/en/'),
+  // El sitio publica URLs absolutas (ver ORIGEN en prerender.mjs): se compara el
+  // camino, no el origen, para que la comprobación valga con cualquier dominio.
+  const rutas = hreflang.map((h) => {
+    const [lang, href] = h.split('=');
+    return lang + '=' + new URL(href, base).pathname;
+  });
+  ok(rutas.includes('es=/') && rutas.includes('en=/en/'),
      `hreflang enlaza las dos versiones: ${JSON.stringify(hreflang)}`);
 
   const textoEn = await ingles.$eval('#documento', (e) => e.textContent);
@@ -144,6 +178,7 @@ try {
 
   ok(consola.length === 0, 'sin errores de consola en escritorio' + (consola.length ? ': ' + consola.join(' | ') : ''));
   ok(consolaM.length === 0, 'sin errores de consola en móvil' + (consolaM.length ? ': ' + consolaM.join(' | ') : ''));
+  ok(consolaC.length === 0, 'sin errores de consola en la vista de chasis' + (consolaC.length ? ': ' + consolaC.join(' | ') : ''));
 
   await browser.disconnect();
 } catch (e) {

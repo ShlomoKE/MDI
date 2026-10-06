@@ -1,7 +1,7 @@
 /**
  * La frontera de capacidad: agentes contra usuarios, con el hardware fijo.
  *
- * Cada curva es una GPU. Todos los puntos sobre ella saturan el sistema, así
+ * Cada curva es una GPU o un chasis. Todos los puntos sobre ella saturan el sistema, así
  * que no hay un óptimo: es el intercambio real entre atender agentes y atender
  * usuarios, y la pendiente es κ. A diferencia del prototipo la curva se
  * muestrea llamando al motor, no se dibuja como recta: cuando el cuello cambia
@@ -9,6 +9,7 @@
  */
 
 import { useTextos } from "../i18n/contexto";
+import type { Vista } from "../lib/catalogos";
 import { COLOR, colorCuello, fmt } from "../lib/formato";
 import type { Fila } from "../lib/resultados";
 import { VacioSVG } from "./GraficaPareto";
@@ -18,6 +19,8 @@ interface Props {
   /** Agentes fijados por el usuario: la recta vertical de referencia. */
   Ua: number;
   G: number;
+  /** Qué se está comparando: decide si G son GPUs, chasis o unidades. */
+  vista: Vista;
   foco: string | null;
   setFoco: (id: string | null) => void;
 }
@@ -33,12 +36,13 @@ const PH = H - MT - MB;
 
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
-export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
+export function GraficaFrontera({ filas, Ua, G, vista, foco, setFoco }: Props) {
   const t = useTextos();
   const ok = filas.filter((f) => f.techos.viable && f.frontera.length > 1);
+  const unidades = t.calculadora.unidades(vista, String(G));
 
   if (!ok.length) {
-    return <VacioSVG texto={t.graficas.vacioFrontera(String(G))} />;
+    return <VacioSVG texto={t.graficas.vacioFrontera(unidades)} />;
   }
 
   const maxX = Math.max(Ua * 1.2, ...ok.map((f) => f.soloAgentes), 1) * 1.08;
@@ -53,7 +57,7 @@ export function GraficaFrontera({ filas, Ua, G, foco, setFoco }: Props) {
       className="w-full h-auto"
       style={{ maxHeight: 380 }}
       role="img"
-      aria-label={t.graficas.ariaFrontera(String(G))}
+      aria-label={t.graficas.ariaFrontera(unidades)}
     >
       {TICKS.map((t) => (
         <g key={"y" + t}>

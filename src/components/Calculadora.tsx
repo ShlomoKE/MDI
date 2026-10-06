@@ -15,9 +15,27 @@ import GraficaFrontera from "./GraficaFrontera";
 import GraficaPareto from "./GraficaPareto";
 import TablaGPUs from "./TablaGPUs";
 import { Boton, Campo, Fijo, Kpi, Seccion } from "./Campos";
-import { DUTY_AGENTE, DUTY_HUMANO, type GPUCatalogo, type ModeloCatalogo } from "../lib/catalogos";
+import {
+  DUTY_AGENTE,
+  DUTY_HUMANO,
+  VISTAS,
+  esChasis,
+  type GPUCatalogo,
+  type ModeloCatalogo,
+} from "../lib/catalogos";
 import { descargarCSV, nombreConFecha, type Celda } from "../lib/csv";
-import { CLASE_CUELLO, colorCuello, enGB, enKB, fmt, fmtCorto, usd } from "../lib/formato";
+import {
+  CLASE_CUELLO,
+  bwEfectivoDe,
+  bwNominalDe,
+  colorCuello,
+  enGB,
+  enKB,
+  fmt,
+  fmtCorto,
+  usd,
+  vramDe,
+} from "../lib/formato";
 import { calcular } from "../lib/resultados";
 import { ESTADO_INICIAL, enlace, leer, serializar, type Estado, type Modo } from "../lib/urlEstado";
 import { useTextos } from "../i18n/contexto";
@@ -65,7 +83,7 @@ export function Calculadora() {
     ["capacidad", t.calculadora.modoCap],
   ];
 
-  // El foco puede caer en una GPU excluida de la comparación: sigue teniendo
+  // El foco puede caer en una unidad excluida de la comparación: sigue teniendo
   // fila en la tabla y su detalle es igual de válido.
   const activo = r.filas.find((f) => f.gpu.id === foco && f.techos.viable) ?? r.mejor;
   const cuelloActivo = activo
@@ -76,11 +94,21 @@ export function Calculadora() {
         : ""
     : "";
 
-  const onCambiarGpu = (id: string, cambios: Partial<GPUCatalogo>) =>
-    set({ gpus: estado.gpus.map((g) => (g.id === id ? { ...g, ...cambios } : g)) });
+  // Una fila de la tabla puede ser una GPU o un chasis, y cada uno vive en su
+  // propia lista del estado: el id dice en cuál.
+  const esDeChasis = (id: string) => estado.chasis.some((c) => c.id === id);
 
-  const onEliminarGpu = (id: string) =>
-    set({ gpus: estado.gpus.filter((g) => g.id !== id) });
+  const onCambiarUnidad = (id: string, cambios: Partial<GPUCatalogo>) => {
+    const aplicar = (g: GPUCatalogo) => (g.id === id ? { ...g, ...cambios } : g);
+    set(esDeChasis(id) ? { chasis: estado.chasis.map(aplicar) } : { gpus: estado.gpus.map(aplicar) });
+  };
+
+  const onEliminarUnidad = (id: string) =>
+    set(
+      esDeChasis(id)
+        ? { chasis: estado.chasis.filter((g) => g.id !== id) }
+        : { gpus: estado.gpus.filter((g) => g.id !== id) },
+    );
 
   const onModelos = (modelos: ModeloCatalogo[], modeloId?: string) =>
     set({ modelos, modeloId: modeloId ?? estado.modeloId });
@@ -262,10 +290,44 @@ export function Calculadora() {
             <Kpi k={t.calculadora.kpiKappa} v={`${fmt(r.kappa)}×`} col="text-lat" />
           </div>
 
+          {/* Qué hardware se compara: GPUs sueltas, chasis completos o los dos. */}
+          <div className="mb-4">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="rotulo text-suave">{t.calculadora.vistaEtiqueta}</span>
+              <div
+                className="flex rounded border border-linea overflow-hidden"
+                role="group"
+                aria-label={t.calculadora.vistaAria}
+              >
+                {VISTAS.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => set({ vista: v })}
+                    aria-pressed={estado.vista === v}
+                    className={
+                      "px-3 py-1.5 text-sm transition-colors " +
+                      (estado.vista === v
+                        ? "bg-tinta text-superficie"
+                        : "bg-superficie text-suave hover:bg-fondo")
+                    }
+                  >
+                    {t.calculadora.vista[v]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs mt-2 leading-relaxed text-suave max-w-prose">
+              {t.calculadora.notaVista[estado.vista]}
+            </p>
+          </div>
+
           <div className="rounded border border-linea bg-superficie mb-6 p-3">
             <div className="flex items-baseline justify-between mb-1 px-1 sm:px-2 flex-wrap gap-2">
               <h3 className="rotulo text-tinta">
-                {dim ? t.calculadora.graficaDim : t.calculadora.graficaCap(String(estado.G))}
+                {dim
+                  ? t.calculadora.graficaDim
+                  : t.calculadora.graficaCap(t.calculadora.unidades(estado.vista, String(estado.G)))}
               </h3>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-suave">
                 {(["memoria", "latencia", "computo"] as const).map((k) => (
@@ -289,30 +351,39 @@ export function Calculadora() {
                 setFoco={setFoco}
               />
             ) : (
-              <GraficaFrontera filas={r.ok} Ua={estado.Ua} G={estado.G} foco={foco} setFoco={setFoco} />
+              <GraficaFrontera
+                filas={r.ok}
+                Ua={estado.Ua}
+                G={estado.G}
+                vista={estado.vista}
+                foco={foco}
+                setFoco={setFoco}
+              />
             )}
           </div>
 
           <TablaGPUs
             filas={r.filas}
             modo={estado.modo}
+            vista={estado.vista}
             modeloNombre={r.modelo.nombre}
-            eff={estado.eff}
             slo_ms={estado.slo_ms}
             G={estado.G}
             mejorId={r.mejor ? r.mejor.gpu.id : null}
             foco={foco}
             setFoco={setFoco}
-            onCambiar={onCambiarGpu}
-            onEliminar={onEliminarGpu}
+            onCambiar={onCambiarUnidad}
+            onEliminar={onEliminarUnidad}
           />
 
           <div className="mt-4">
             <EditorCatalogo
               gpus={estado.gpus}
+              chasis={estado.chasis}
               modelos={estado.modelos}
               modeloId={estado.modeloId}
               onGpus={(gpus) => set({ gpus })}
+              onChasis={(chasis) => set({ chasis })}
               onModelos={onModelos}
             />
           </div>
@@ -322,8 +393,11 @@ export function Calculadora() {
             <div className="rounded border border-linea bg-superficie mt-4 p-4">
               <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                 <h3 className="rotulo text-tinta">
-                  {activo.gpu.nombre} · {dim ? activo.dim.G : estado.G} GPU
-                  {(dim ? activo.dim.G : estado.G) > 1 ? "s" : ""}
+                  {t.calculadora.tituloDetalle(
+                    activo.gpu.nombre,
+                    dim ? activo.dim.G : estado.G,
+                    activo.gpu.n,
+                  )}
                 </h3>
                 <span className="text-xs text-suave hidden sm:block">
                   {t.calculadora.comparar}
@@ -397,15 +471,28 @@ export function Calculadora() {
                     G_comp={activo.dim.G_comp}
                     cuello={activo.dim.cuello}
                     ancho="100%"
+                    chasis={esChasis(activo.gpu)}
                   />
                 </div>
+              )}
+
+              {/* Con más GPUs que cabezas de KV el caché se replica; el motor ya lo
+                  cuenta, y aquí se dice para que el número no parezca un error. */}
+              {activo.kvRep > 1 && (
+                <p className="text-xs mt-3 leading-relaxed text-suave">
+                  {t.calculadora.avisoKV(
+                    activo.gpu.n,
+                    modelo.kv_heads,
+                    fmt(activo.kvRep, activo.kvRep % 1 === 0 ? 0 : 1),
+                  )}
+                </p>
               )}
 
               <p className="text-xs mt-3 leading-relaxed text-suave">
                 {dim
                   ? t.calculadora.cierreDim(fmt(r.pctAgentes))
                   : t.calculadora.cierreCap(
-                      String(estado.G),
+                      t.calculadora.unidades(esChasis(activo.gpu) ? "chasis" : "gpus", String(estado.G)),
                       nombreCuello(t, cuelloActivo),
                       fmt(r.kappa),
                     )}
@@ -448,16 +535,28 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
     "Uh", "Dh", "Ch_tok", "Ua", "Da", "Ca_tok", "slo_ms", "overhead_GB", "eff",
   ];
 
+  // Las cifras de hardware son las de la UNIDAD entera, igual que en la tabla:
+  // en un chasis, las de sus n GPUs juntas. `n_gpus` y `escala` dicen cuántas
+  // son y con qué σ; en una GPU suelta valen 1 y 1.
+  const unidad = (f: (typeof r.filas)[number]): Celda[] => [
+    f.gpu.nombre, f.gpu.on, vramDe(f.hw), bwNominalDe(f.hw), bwEfectivoDe(f.hw),
+    f.gpu.tflops * f.gpu.n, f.gpu.precio_hora, f.gpu.n, f.gpu.escala,
+  ];
+  const colsUnidad = [
+    "gpu", "incluida", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
+    "n_gpus", "escala",
+  ];
+
   if (dim) {
     return [
       [
-        "gpu", "incluida", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
+        ...colsUnidad,
         "viable", "motivo", "G", "cuello", "G_memoria", "G_latencia", "G_computo",
-        "B_por_gpu", "tpot_ms", "tok_s_sesion", "throughput_tok_s", "costo_hora", "cumple_slo",
+        "B_por_unidad", "tpot_ms", "tok_s_sesion", "throughput_tok_s", "costo_hora", "cumple_slo",
         ...colsEscenario,
       ],
       ...r.filas.map((f): Celda[] => [
-        f.gpu.nombre, f.gpu.on, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
+        ...unidad(f),
         f.dim.viable, f.dim.motivo, f.dim.viable ? f.dim.G : null, f.dim.cuello,
         f.dim.viable ? f.dim.G_mem : null, f.dim.viable ? f.dim.G_lat : null, f.dim.viable ? f.dim.G_comp : null,
         f.dim.viable ? f.dim.B : null, f.dim.viable ? f.dim.tpot_ms : null,
@@ -470,13 +569,13 @@ function filasCSV(e: Estado, r: ReturnType<typeof calcular>, dim: boolean): Celd
 
   return [
     [
-      "gpu", "incluida", "vram_GB", "bw_GBs_nominal", "bw_GBs_efectivo", "tflops_nominal", "usd_hora",
+      ...colsUnidad,
       "viable", "motivo", "G", "alcanza", "usuarios", "agentes_fijados", "solo_agentes",
-      "solo_usuarios", "cuello", "B_por_gpu", "tpot_ms", "throughput_tok_s", "costo_hora",
+      "solo_usuarios", "cuello", "B_por_unidad", "tpot_ms", "throughput_tok_s", "costo_hora",
       ...colsEscenario,
     ],
     ...r.filas.map((f): Celda[] => [
-      f.gpu.nombre, f.gpu.on, f.gpu.vram_gb, f.gpu.bw_gbs, f.gpu.bw_gbs * e.eff, f.gpu.tflops, f.gpu.precio_hora,
+      ...unidad(f),
       f.cap.viable, f.cap.motivo, f.cap.viable ? f.cap.G : null, f.cap.viable ? f.cap.alcanza : null,
       f.cap.alcanza ? f.cap.usuarios : null, f.cap.agentes,
       f.techos.viable ? f.soloAgentes : null, f.techos.viable ? f.soloUsuarios : null,

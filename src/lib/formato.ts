@@ -5,7 +5,7 @@
  * ve en GB, KB, ms o USD pasa por estas funciones.
  */
 
-import { GB, type Cuello } from "./motor";
+import { GB, type Cuello, type GPU } from "./motor";
 
 const LOCALE = "es-MX";
 
@@ -39,6 +39,29 @@ export const enMs = (segundos: number, d = 1): string => fmt(segundos * 1000, d)
 
 export const usd = (n: number, d = 2): string =>
   Number.isFinite(n) ? "$" + fmt(n, d) : "—";
+
+/**
+ * GB de VRAM tal como se escriben en la tabla: sin decimales de más y con
+ * separador de miles solo desde 1000, para que una GPU de 80 GB siga diciendo
+ * «80» y un chasis de 8 diga «640» o «1,440».
+ */
+export const fmtGB = (v: number): string => {
+  if (!Number.isFinite(v)) return "—";
+  const limpio = Number(v.toPrecision(10));
+  return Math.abs(limpio) >= 1000 ? fmt(limpio, limpio % 1 === 0 ? 0 : 1) : String(limpio);
+};
+
+// Lo que la unidad ENTERA aporta, en las unidades de la tabla. Una GPU suelta
+// (n=1) da exactamente sus propias cifras; un chasis, las de sus n GPUs juntas.
+
+/** VRAM de la unidad entera, en GB. */
+export const vramDe = (g: GPU): number => g.n * g.vram_gb;
+
+/** Ancho de banda nominal de la unidad entera, en GB/s. */
+export const bwNominalDe = (g: GPU): number => g.n * g.bw_gbs;
+
+/** Ancho de banda efectivo de la unidad entera, en GB/s: el W del motor. */
+export const bwEfectivoDe = (g: GPU): number => g.n * g.bw_gbs * g.eff * g.escala;
 
 /** Las clases de Tailwind por restricción, para no repetir el mapeo. */
 export const CLASE_CUELLO: Record<Cuello, { texto: string; fondo: string; borde: string }> = {

@@ -1,5 +1,6 @@
 /**
- * La tabla de resultados, una fila por GPU del catálogo.
+ * La tabla de resultados, una fila por unidad de hardware del catálogo: una GPU
+ * suelta o un chasis completo.
  *
  * En escritorio es una tabla; por debajo de `md` se convierte en tarjetas
  * apiladas, porque nueve columnas en un teléfono no se leen. Los dos caminos
@@ -8,10 +9,19 @@
 
 import BarrasPresion from "./BarrasPresion";
 import EntradaNumerica from "./EntradaNumerica";
-import type { GPUCatalogo } from "../lib/catalogos";
+import { esChasis, type GPUCatalogo, type Vista } from "../lib/catalogos";
 import type { Fila } from "../lib/resultados";
 import type { Modo } from "../lib/urlEstado";
-import { CLASE_CUELLO, fmt, fmtCorto, usd } from "../lib/formato";
+import {
+  CLASE_CUELLO,
+  bwEfectivoDe,
+  bwNominalDe,
+  fmt,
+  fmtCorto,
+  fmtGB,
+  usd,
+  vramDe,
+} from "../lib/formato";
 import type { Cuello } from "../lib/motor";
 import { useTextos } from "../i18n/contexto";
 import { nombreCuello } from "../i18n/cuello";
@@ -20,9 +30,10 @@ import { motivoDe } from "../i18n/motivo";
 interface Props {
   filas: Fila[];
   modo: Modo;
+  /** Qué catálogo se compara: decide cómo se rotulan la primera columna y el conteo. */
+  vista: Vista;
   /** Hace falta para rearmar el motivo de inviabilidad en el idioma vigente. */
   modeloNombre: string;
-  eff: number;
   slo_ms: number;
   G: number;
   mejorId: string | null;
@@ -82,19 +93,25 @@ function BotonEliminar({ nombre, onClick }: { nombre: string; onClick: () => voi
 }
 
 export function TablaGPUs(p: Props) {
-  const { filas, modo, modeloNombre, eff, slo_ms, G, mejorId, foco, setFoco } = p;
+  const { filas, modo, vista, modeloNombre, slo_ms, G, mejorId, foco, setFoco } = p;
   const t = useTextos();
   const dim = modo === "dimensionar";
   const etiquetaMejor = dim ? t.tabla.masBarata : t.tabla.masCapacidad;
 
+  // Con GPUs sueltas la tabla dice lo de siempre; con chasis o con los dos, lo
+  // que se cuenta ya no son solo GPUs.
+  const colPrimera =
+    vista === "gpus" ? t.tabla.colGPU : vista === "chasis" ? t.tabla.colChasis : t.tabla.colHardware;
+  const colCuantas = vista === "gpus" ? t.tabla.colGPUs : t.tabla.colUnidades;
+
   // Los encabezados se arman aquí dentro: son texto de interfaz y cambian con
   // el idioma, así que ya no pueden vivir como constantes del módulo.
   const COLS_DIM = [
-    t.tabla.colGPU,
+    colPrimera,
     t.tabla.colVRAM,
     t.tabla.colAncho,
     t.tabla.colPrecio,
-    t.tabla.colGPUs,
+    colCuantas,
     t.tabla.colPresion,
     t.tabla.colTPOT,
     t.tabla.colTokS,
@@ -102,7 +119,7 @@ export function TablaGPUs(p: Props) {
   ];
 
   const COLS_CAP = [
-    t.tabla.colGPU,
+    colPrimera,
     t.tabla.colVRAM,
     t.tabla.colAncho,
     t.tabla.colPrecio,
@@ -117,7 +134,15 @@ export function TablaGPUs(p: Props) {
     <>
       {/* ---------------- Escritorio ---------------- */}
       <div className="hidden md:block rounded border border-linea bg-superficie overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: 820 }}>
+        {/* Con chasis las celdas llevan más texto (VRAM de cuatro cifras, GPUs
+            totales) y Costo/h, la columna con la que se compara, se salía de
+            pantalla: el relleno se compacta. Con GPUs sueltas queda como estaba. */}
+        <table
+          className={
+            "w-full text-sm" + (vista === "gpus" ? "" : " [&_td]:px-1.5 [&_th]:px-1.5")
+          }
+          style={{ minWidth: 820 }}
+        >
           <caption className="sr-only">
             {t.tabla.caption(dim ? t.tabla.modoDim : t.tabla.modoCap)}
           </caption>
@@ -125,7 +150,7 @@ export function TablaGPUs(p: Props) {
             <tr className="bg-fondo">
               {(dim ? COLS_DIM : COLS_CAP).map((h, i) => (
                 <th
-                  key={h}
+                  key={i}
                   scope="col"
                   className="font-medium px-3 py-2 rotulo text-suave whitespace-nowrap"
                   style={{ textAlign: i === 0 || (dim && i === 5) ? "left" : "right" }}
@@ -133,7 +158,9 @@ export function TablaGPUs(p: Props) {
                   {h}
                 </th>
               ))}
-              <th scope="col" className="w-8" />
+              <th scope="col" className="w-8">
+                <span className="sr-only">{t.tabla.colAcciones}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -161,7 +188,17 @@ export function TablaGPUs(p: Props) {
                         aria-label={t.tabla.incluir(f.gpu.nombre)}
                         onChange={() => p.onCambiar(f.gpu.id, { on: !f.gpu.on })}
                       />
-                      <span className={esMejor ? "font-semibold" : ""}>{f.gpu.nombre}</span>
+                      {/* Las GPUs del chasis van en una segunda línea: en la misma
+                          la tabla se ensancha y Costo/h, que es la columna con la
+                          que se compara, se sale de pantalla. */}
+                      <div className="min-w-0">
+                        <span className={esMejor ? "font-semibold" : ""}>{f.gpu.nombre}</span>
+                        {esChasis(f.gpu) && (
+                          <span className="block text-xs text-suave whitespace-nowrap">
+                            {t.tabla.etiquetaChasis(f.gpu.n)}
+                          </span>
+                        )}
+                      </div>
                       {esMejor && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-mem-tenue text-mem whitespace-nowrap">
                           {etiquetaMejor}
@@ -170,11 +207,11 @@ export function TablaGPUs(p: Props) {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right mono whitespace-nowrap">
-                    {f.gpu.vram_gb} GB
+                    {fmtGB(vramDe(f.hw))} GB
                   </td>
                   <td className="px-3 py-2 text-right mono whitespace-nowrap">
-                    {fmt(f.gpu.bw_gbs)}
-                    <span className="text-suave"> → {fmt(f.gpu.bw_gbs * eff)}</span>
+                    {fmt(bwNominalDe(f.hw))}
+                    <span className="text-suave"> → {fmt(bwEfectivoDe(f.hw))}</span>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <PrecioInput
@@ -190,13 +227,24 @@ export function TablaGPUs(p: Props) {
                     </td>
                   ) : dim ? (
                     <>
-                      <td className="px-3 py-2 text-right mono">{f.dim.G}</td>
+                      <td className="px-3 py-2 text-right mono whitespace-nowrap">
+                        {f.dim.G}
+                        {esChasis(f.gpu) && (
+                          <>
+                            {" "}
+                            <span className="block text-xs text-suave">
+                              ({t.tabla.totalGPUs(f.dim.G * f.gpu.n)})
+                            </span>
+                          </>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <BarrasPresion
                           G_mem={f.dim.G_mem}
                           G_lat={f.dim.G_lat}
                           G_comp={f.dim.G_comp}
                           cuello={f.dim.cuello}
+                          chasis={esChasis(f.gpu)}
                         />
                       </td>
                       <td
@@ -291,6 +339,11 @@ export function TablaGPUs(p: Props) {
                   <span className={"truncate " + (esMejor ? "font-semibold" : "")}>
                     {f.gpu.nombre}
                   </span>
+                  {esChasis(f.gpu) && (
+                    <span className="text-xs text-suave whitespace-nowrap">
+                      {t.tabla.etiquetaChasis(f.gpu.n)}
+                    </span>
+                  )}
                 </label>
                 <div className="flex items-center gap-1 shrink-0">
                   {esMejor && (
@@ -306,10 +359,10 @@ export function TablaGPUs(p: Props) {
               </header>
 
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
-                <Dato k={t.tabla.colVRAM} v={`${f.gpu.vram_gb} GB`} />
+                <Dato k={t.tabla.colVRAM} v={`${fmtGB(vramDe(f.hw))} GB`} />
                 <Dato
                   k={t.tabla.colAncho}
-                  v={`${fmt(f.gpu.bw_gbs)} → ${fmt(f.gpu.bw_gbs * eff)}`}
+                  v={`${fmt(bwNominalDe(f.hw))} → ${fmt(bwEfectivoDe(f.hw))}`}
                 />
                 <div className="col-span-2 flex items-center justify-between gap-2 py-0.5">
                   <dt className="text-xs text-suave">{t.tabla.precioUSD}</dt>
@@ -327,7 +380,15 @@ export function TablaGPUs(p: Props) {
                 {f.techos.viable &&
                   (dim ? (
                     <>
-                      <Dato k={t.tabla.colGPUs} v={String(f.dim.G)} destacado />
+                      <Dato
+                        k={colCuantas}
+                        v={
+                          esChasis(f.gpu)
+                            ? `${f.dim.G} (${t.tabla.totalGPUs(f.dim.G * f.gpu.n)})`
+                            : String(f.dim.G)
+                        }
+                        destacado
+                      />
                       <Dato
                         k={t.tabla.colTPOT}
                         v={`${fmt(f.dim.tpot_ms, 1)} ms`}
@@ -344,7 +405,9 @@ export function TablaGPUs(p: Props) {
                   ) : (
                     <>
                       <Dato
-                        k={t.tabla.usuariosCon(String(G))}
+                        k={t.tabla.usuariosCon(
+                          t.calculadora.unidades(esChasis(f.gpu) ? "chasis" : "gpus", String(G)),
+                        )}
                         v={f.cap.alcanza ? fmt(f.cap.usuarios) : t.tabla.noAlcanza}
                         clase={f.cap.alcanza ? "text-mem" : "text-lat"}
                         destacado
@@ -385,6 +448,7 @@ export function TablaGPUs(p: Props) {
                     G_comp={f.dim.G_comp}
                     cuello={f.dim.cuello}
                     ancho="100%"
+                    chasis={esChasis(f.gpu)}
                   />
                 </div>
               )}

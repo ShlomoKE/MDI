@@ -1,9 +1,9 @@
 /**
  * Las tres restricciones lado a lado.
  *
- * Cada barra es cuántas GPUs exigiría esa restricción por sí sola. La que
- * domina va a plena opacidad y es la que fija el total; las otras dos quedan
- * atenuadas para que se vea de un golpe cuánta holgura hay.
+ * Cada barra es cuántas unidades —GPUs o chasis— exigiría esa restricción por
+ * sí sola. La que domina va a plena opacidad y es la que fija el total; las
+ * otras dos quedan atenuadas para que se vea de un golpe cuánta holgura hay.
  */
 
 import type { Cuello } from "../lib/motor";
@@ -18,9 +18,11 @@ interface Props {
   cuello: Cuello | "";
   /** Ancho mínimo del bloque; en tarjeta conviene dejarlo suelto. */
   ancho?: number | string;
+  /** Si la unidad es un chasis, la etiqueta accesible lo dice. */
+  chasis?: boolean;
 }
 
-export function BarrasPresion({ G_mem, G_lat, G_comp, cuello, ancho = 130 }: Props) {
+export function BarrasPresion({ G_mem, G_lat, G_comp, cuello, ancho = 130, chasis = false }: Props) {
   const t = useTextos();
 
   // Las filas se arman dentro del componente porque sus rótulos dependen del
@@ -73,7 +75,7 @@ export function BarrasPresion({ G_mem, G_lat, G_comp, cuello, ancho = 130 }: Pro
             <div
               className="flex-1 h-2 rounded bg-fondo min-w-8"
               role="img"
-              aria-label={t.barras.aria(largo, fmt(v, 1))}
+              aria-label={(chasis ? t.barras.ariaChasis : t.barras.aria)(largo, fmt(v, 1))}
             >
               <div
                 className="h-2 rounded transition-[width] duration-200"

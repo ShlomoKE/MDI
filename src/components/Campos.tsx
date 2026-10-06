@@ -141,6 +141,7 @@ export function Numero({
   etiqueta,
   paso = 1,
   min = 0,
+  max,
   ancho = "w-full",
 }: {
   valor: number;
@@ -148,6 +149,7 @@ export function Numero({
   etiqueta: string;
   paso?: number;
   min?: number;
+  max?: number;
   ancho?: string;
 }) {
   return (
@@ -156,6 +158,7 @@ export function Numero({
       set={set}
       paso={paso}
       min={min}
+      max={max}
       etiqueta={etiqueta}
       className={"campo mono px-1.5 py-1 text-right text-sm " + ancho}
     />

@@ -1,11 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import referencia from "./referencia.json";
 import {
+  F,
   GB,
   KVt,
   Pm,
   QUANT,
+  Vt,
   W,
   formatoG,
   activasTotal,
@@ -14,6 +17,7 @@ import {
   cruces,
   dimensionar,
   kappa,
+  modeloEn,
   slo,
   techos,
   techosAbsolutos,
@@ -23,7 +27,14 @@ import {
   type Modelo,
   type Quant,
 } from "./motor";
-import { CARGA_DEMO, GPUS, MODELOS } from "./catalogos";
+import {
+  CARGA_DEMO,
+  CHASIS,
+  GPUS,
+  MODELOS,
+  REFERENCIA_CHASIS,
+  horaria,
+} from "./catalogos";
 
 // --------------------------------------------------------------------------- //
 // Utilidades
@@ -71,6 +82,8 @@ const aGPU = (g: CasoJSON["gpu"]): GPU => ({
   tflops: g.tflops,
   precio_hora: g.precio_hora,
   eff: g.eff,
+  n: g.n,
+  escala: g.escala,
 });
 
 const aCarga = (c: CasoJSON["carga"]): Carga => ({
@@ -507,6 +520,353 @@ describe("unidades y guardas", () => {
     ] as Array<[number, string]>) {
       const t = techos(MODELOS[0], g, { ...CARGA_DEMO, slo_ms });
       expect(t.motivo).toBe(`SLO de ${texto} ms inalcanzable en DGX Spark`);
+    }
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 6. Chasis: una unidad de n GPUs
+// --------------------------------------------------------------------------- //
+
+describe("chasis: una unidad de n GPUs", () => {
+  const h100: GPU = GPUS.find((g) => g.nombre === "H100 SXM")!;
+  const qwen = MODELOS[0]; // 4 cabezas de KV
+  const denso8 = MODELOS[1]; // 8 cabezas de KV
+
+  /** La misma H100, pero como una unidad de n GPUs con escalado σ. */
+  const unidad = (n: number, escala = 1): GPU => ({ ...h100, nombre: `${n}×H100`, n, escala });
+
+  it("la VRAM, el ancho de banda y los FLOPS se suman", () => {
+    const c8 = unidad(8);
+    // n es potencia de 2 y σ=1: multiplicar no redondea, así que la igualdad es exacta.
+    expect(Vt(c8)).toBe(8 * Vt(h100));
+    expect(W(c8)).toBe(8 * W(h100));
+    expect(F(c8)).toBe(8 * F(h100));
+  });
+
+  it("σ descuenta ancho de banda y FLOPS por igual, y no toca la VRAM", () => {
+    const mala = unidad(8, 0.5);
+    const perfecta = unidad(8, 1);
+    expect(W(mala)).toBe(W(perfecta) / 2);
+    expect(F(mala)).toBe(F(perfecta) / 2);
+    expect(Vt(mala)).toBe(Vt(perfecta));
+  });
+
+  it("el overhead del motor se paga una vez por GPU", () => {
+    const c8 = unidad(8);
+    const t = techos(qwen, c8, CARGA_DEMO);
+    expect(t.memoria).toBe(Vt(c8) - Pm(qwen) - 8 * CARGA_DEMO.overhead_gb * GB);
+  });
+
+  it("los pesos no se replican: un chasis deja a las n GPUs sueltas por detrás en caché", () => {
+    const suelta = techos(qwen, h100, CARGA_DEMO);
+    const chasis = techos(qwen, unidad(8), CARGA_DEMO);
+    // 8 GPUs sueltas gastan 8 veces los pesos; el chasis los guarda una sola vez.
+    expect(chasis.memoria).toBe(8 * suelta.memoria + 7 * Pm(qwen));
+  });
+
+  it("con σ=1 el techo de cómputo de la unidad es n veces el de una GPU", () => {
+    const suelta = techos(qwen, h100, CARGA_DEMO);
+    expect(techos(qwen, unidad(8), CARGA_DEMO).computo).toBe(8 * suelta.computo);
+    expect(techos(qwen, unidad(4), CARGA_DEMO).computo).toBe(4 * suelta.computo);
+  });
+
+  it("un modelo que no cabe en una GPU cabe en un chasis", () => {
+    const m70: Modelo = { ...MODELOS[2], quant_pesos: "fp16", quant_cache: "fp16" }; // 140 GB
+    const suelta = dimensionar(m70, h100, CARGA_DEMO);
+    expect(suelta.viable).toBe(false);
+    expect(suelta.motivo).toBe("Denso 70B no cabe en H100 SXM");
+
+    const chasis = dimensionar(m70, unidad(8, 0.75), CARGA_DEMO);
+    expect(chasis.viable).toBe(true);
+    expect(chasis.G).toBeGreaterThanOrEqual(1);
+  });
+
+  it("el ejemplo del documento: un 70B en fp8 no alcanza 30 ms en una H100, y sí en un chasis", () => {
+    // La sección «Chasis completos» dice que leer los pesos de un 70B en fp8 desde
+    // una H100 suelta tarda unos 42 ms con η = 0.5. Si cambia una fórmula o el
+    // catálogo, el texto tiene que cambiar con ellos: esta prueba lo obliga.
+    const m70 = MODELOS[2];
+    const piso = (Pm(m70) / W(h100)) * 1000;
+    expect(piso).toBeGreaterThan(41);
+    expect(piso).toBeLessThan(43);
+    expect(dimensionar(m70, h100, CARGA_DEMO).viable).toBe(false);
+    expect(dimensionar(m70, unidad(8, 0.75), CARGA_DEMO).viable).toBe(true);
+  });
+
+  it("el factor n·σ·η es todo lo que cambia: una GPU ficticia con las cifras sumadas da lo mismo", () => {
+    // Un chasis de 8 con σ=1 equivale a una sola GPU con 8× el ancho de banda y
+    // los FLOPS, siempre que se le pague el mismo overhead (8 veces) a la VRAM.
+    // Es la prueba de que "las ecuaciones no cambian, solo sus parámetros".
+    const c = CARGA_DEMO;
+    const chasis = unidad(8);
+    const ficticia: GPU = {
+      ...h100,
+      nombre: "ficticia",
+      vram_gb: 8 * h100.vram_gb - 7 * c.overhead_gb, // descuenta de antemano los 7 overheads extra
+      bw_gbs: 8 * h100.bw_gbs,
+      tflops: 8 * h100.tflops,
+      n: 1,
+      escala: 1,
+    };
+    // Con 8 cabezas de KV el chasis no replica nada, así que el modelo es el mismo.
+    const a = dimensionar(denso8, chasis, c);
+    const b = dimensionar(denso8, ficticia, c);
+    expect(a.G).toBe(b.G);
+    expect(a.cuello).toBe(b.cuello);
+    expect(a.G_mem).toBe(b.G_mem);
+    expect(a.G_lat).toBe(b.G_lat);
+    expect(a.G_comp).toBe(b.G_comp);
+    expect(a.tpot_ms).toBe(b.tpot_ms);
+  });
+
+  describe("réplica de las cabezas de KV", () => {
+    const m8: Modelo = { ...qwen, kv_heads: 8 };
+    const c8 = unidad(8, 0.75);
+
+    it("con más GPUs que cabezas, el caché por token se multiplica por n/H", () => {
+      // 8 GPUs y 4 cabezas: cada cabeza vive en 2 GPUs, que es lo mismo que
+      // tener 8 cabezas. Se verifica contra el modelo de 8 cabezas, campo a campo.
+      expect(dimensionar(qwen, c8, CARGA_DEMO)).toEqual(dimensionar(m8, c8, CARGA_DEMO));
+      expect(capacidad(qwen, c8, CARGA_DEMO, 2)).toEqual(capacidad(m8, c8, CARGA_DEMO, 2));
+      expect(cruces(qwen, c8, CARGA_DEMO)).toEqual(cruces(m8, c8, CARGA_DEMO));
+      expect(techosAbsolutos(qwen, c8, 3000)).toEqual(techosAbsolutos(m8, c8, 3000));
+    });
+
+    it("duplica el caché por token de un modelo de 4 cabezas en 8 GPUs", () => {
+      // La fórmula ingenua, KVₜ = 2·Lₐ·H·dₖ·b con H=4, dice la mitad de lo que de
+      // verdad ocupa el caché una vez repartido en 8 GPUs.
+      expect(KVt(modeloEn(qwen, c8))).toBe(2 * KVt(qwen));
+    });
+
+    it("no replica cuando las GPUs caben en las cabezas, ni con una sola GPU", () => {
+      expect(modeloEn(qwen, unidad(4))).toBe(qwen); // n = H
+      expect(modeloEn(qwen, unidad(2))).toBe(qwen); // n < H
+      expect(modeloEn(denso8, unidad(8))).toBe(denso8); // n = H
+      expect(modeloEn(qwen, h100)).toBe(qwen); // una GPU suelta
+      // Ni siquiera con un modelo de cabezas fraccionarias o inexistentes.
+      const raro: Modelo = { ...qwen, kv_heads: 0.5 };
+      expect(modeloEn(raro, h100)).toBe(raro);
+      const sinCache: Modelo = { ...qwen, kv_heads: 0 };
+      expect(modeloEn(sinCache, unidad(8))).toBe(sinCache);
+    });
+
+    it("la réplica es proporcional a n/H", () => {
+      for (const n of [8, 16, 32, 72]) {
+        const r = modeloEn(qwen, unidad(n));
+        expect(KVt(r) / KVt(qwen), `n=${n}`).toBe(n / qwen.kv_heads);
+      }
+    });
+  });
+
+  describe("monotonía", () => {
+    // Una carga lo bastante grande como para que haga falta más de un chasis.
+    const grande: Carga = {
+      humanos: { U: 120000, D: 0.15, C: 6000 },
+      agentes: { U: 900, D: 0.95, C: 40000 },
+      slo_ms: 30,
+      overhead_gb: 4,
+    };
+
+    it("más escala σ nunca pide más chasis", () => {
+      let previo = Infinity;
+      for (const s of [0.2, 0.4, 0.6, 0.8, 1]) {
+        const d = dimensionar(denso8, unidad(8, s), grande);
+        expect(d.viable, `σ=${s}`).toBe(true);
+        expect(d.G, `σ=${s}`).toBeLessThanOrEqual(previo);
+        previo = d.G;
+      }
+    });
+
+    it("más escala σ solo baja las presiones de latencia y de cómputo, no la de memoria", () => {
+      const mala = dimensionar(denso8, unidad(8, 0.5), grande);
+      const buena = dimensionar(denso8, unidad(8, 1), grande);
+      expect(buena.G_lat).toBeLessThan(mala.G_lat);
+      expect(buena.G_comp).toBeLessThan(mala.G_comp);
+      expect(buena.G_mem).toBe(mala.G_mem);
+    });
+
+    it("dimensionar y capacidad siguen cerrando el círculo con chasis", () => {
+      let verificados = 0;
+      for (const g of CHASIS) {
+        for (const m of MODELOS) {
+          const d = dimensionar(m, g, grande);
+          if (!d.viable) continue;
+          const cap = capacidad(m, g, grande, d.G);
+          expect(cap.alcanza, `${m.nombre}/${g.nombre}`).toBe(true);
+          expect(cap.usuarios, `${m.nombre}/${g.nombre}`).toBeGreaterThanOrEqual(grande.humanos.U);
+          verificados++;
+        }
+      }
+      expect(verificados).toBeGreaterThan(10);
+    });
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 7. Los catálogos de catalogos.ts son los de motor.py
+// --------------------------------------------------------------------------- //
+
+describe("los catálogos coinciden con los de motor.py", () => {
+  // Los dos catálogos se escriben a mano, uno por lenguaje, y una cifra mal
+  // copiada no la detecta ninguna prueba de paridad del motor: el motor recibe
+  // lo que le den. Esta sí: compara campo a campo y en el mismo orden.
+  const cat = referencia.catalogos;
+
+  it("GPUs: mismos nombres, orden y cifras", () => {
+    expect(GPUS.map((g) => g.nombre)).toEqual(cat.gpus.map((g) => g.nombre));
+    cat.gpus.forEach((py, i) => {
+      const ts = GPUS[i];
+      for (const k of ["vram_gb", "bw_gbs", "tflops", "precio_hora", "eff", "n", "escala"] as const) {
+        expect(ts[k], `${py.nombre}.${k}`).toBe(py[k]);
+      }
+    });
+  });
+
+  it("chasis: mismos nombres, orden y cifras", () => {
+    expect(CHASIS.map((g) => g.nombre)).toEqual(cat.chasis.map((g) => g.nombre));
+    cat.chasis.forEach((py, i) => {
+      const ts = CHASIS[i];
+      for (const k of ["vram_gb", "bw_gbs", "tflops", "precio_hora", "eff", "n", "escala"] as const) {
+        expect(ts[k], `${py.nombre}.${k}`).toBe(py[k]);
+      }
+    });
+  });
+
+  it("modelos: mismos nombres, orden y cifras", () => {
+    expect(MODELOS.map((m) => m.nombre)).toEqual(cat.modelos.map((m) => m.nombre));
+    cat.modelos.forEach((py, i) => {
+      const ts = MODELOS[i];
+      for (const k of ["N", "capas_atn", "kv_heads", "head_dim", "quant_pesos", "quant_cache"] as const) {
+        expect(ts[k], `${py.nombre}.${k}`).toBe(py[k]);
+      }
+    });
+  });
+
+  it("los chasis son de verdad chasis, y las GPUs sueltas son una sola GPU", () => {
+    for (const g of GPUS) expect(g.n, g.nombre).toBe(1);
+    for (const c of CHASIS) {
+      expect(c.n, c.nombre).toBeGreaterThan(1);
+      expect(c.escala, c.nombre).toBeGreaterThan(0);
+      expect(c.escala, c.nombre).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("los nombres no se repiten: cada unidad se identifica por el suyo", () => {
+    const nombres = [...GPUS, ...CHASIS].map((g) => g.nombre);
+    expect(new Set(nombres).size).toBe(nombres.length);
+    const ids = [...GPUS, ...CHASIS].map((g) => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 8. Lo que los documentos dicen de las pruebas es lo que las pruebas hacen
+// --------------------------------------------------------------------------- //
+
+describe("los documentos citan el número real de escenarios", () => {
+  // El número de escenarios de paridad está escrito a mano en los READMEs y en
+  // el pie de la página. Cada vez que se agrega una unidad al catálogo cambia, y
+  // una cifra vieja ahí es justo el tipo de afirmación falsa que este proyecto
+  // se jura no hacer. La prueba la ata al fixture real.
+  const n = referencia.casos.length;
+
+  const cifras = (ruta: string, patron: RegExp): number[] => {
+    const texto = readFileSync(new URL(ruta, import.meta.url), "utf8");
+    return Array.from(texto.matchAll(patron), (m) => Number(m[1]));
+  };
+
+  it("README.md", () => {
+    const citadas = cifras("../../README.md", /\b(\d{3,5})\s+(?:escenarios|casos)\b/g);
+    expect(citadas.length).toBeGreaterThan(0);
+    for (const c of citadas) expect(c, "README.md cita una cifra vieja").toBe(n);
+  });
+
+  it("README.en.md", () => {
+    const citadas = cifras("../../README.en.md", /\b(\d{3,5})\s+(?:scenarios|cases)\b/g);
+    expect(citadas.length).toBeGreaterThan(0);
+    for (const c of citadas) expect(c, "README.en.md cita una cifra vieja").toBe(n);
+  });
+
+  it("el pie de la página, en los dos idiomas", () => {
+    const es = cifras("../i18n/textos.ts", /\b(\d{3,5})\s+escenarios\b/g);
+    const en = cifras("../i18n/textos.ts", /\b(\d{3,5})\s+scenarios\b/g);
+    expect(es.length).toBeGreaterThan(0);
+    expect(en.length).toBeGreaterThan(0);
+    for (const c of [...es, ...en]) expect(c, "el pie cita una cifra vieja").toBe(n);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 9. Los precios de los chasis tienen procedencia y siguen una regla
+// --------------------------------------------------------------------------- //
+
+describe("los precios por hora de los chasis", () => {
+  // Un precio por hora suelto es un número del que nadie sabe de dónde salió. Cada
+  // chasis lleva su precio de lista, su consumo y la fuente, y su USD/h tiene que
+  // ser el que da la regla de `horaria` con esos datos, al centavo: si se cambia
+  // uno sin el otro, esta prueba falla.
+  for (const c of CHASIS) {
+    describe(c.nombre, () => {
+      const ref = REFERENCIA_CHASIS[c.id];
+
+      it("tiene referencia de precio", () => {
+        expect(ref, `falta REFERENCIA_CHASIS["${c.id}"]`).toBeDefined();
+      });
+
+      it("su USD/h es el de la regla, al centavo", () => {
+        expect(Math.abs(c.precio_hora - horaria(ref.usd, ref.kw))).toBeLessThanOrEqual(0.005 + 1e-9);
+      });
+
+      it("su fuente es una URL https y su fecha un AAAA-MM", () => {
+        expect(ref.fuente.url).toMatch(/^https:\/\/[^\s]+$/);
+        expect(ref.fuente.url, "quedó una URL de relleno").not.toContain("example.com");
+        expect(ref.fecha).toMatch(/^20\d\d-(0[1-9]|1[0-2])$/);
+        expect(ref.fuente.nombre.length).toBeGreaterThan(0);
+        expect(["alta", "media", "baja"]).toContain(ref.confianza);
+      });
+    });
+  }
+
+  it("los σ que cita el documento son los del catálogo", () => {
+    // La sección «Chasis completos» dice cuánto vale σ en cada chasis de NVIDIA y
+    // en el de AMD. Si se cambia uno en el catálogo, el texto tiene que cambiar.
+    const f = (nombre: string) => CHASIS.find((c) => c.nombre === nombre)!.escala.toFixed(2);
+    const leer = (ruta: string) =>
+      readFileSync(new URL(ruta, import.meta.url), "utf8").replace(/\s+/g, " ");
+
+    expect(leer("../contenido/documento.mdx")).toContain(
+      `Sale ${f("DGX H100")} en la H100, ${f("DGX H200")} en la H200, ${f("DGX B200")} en la B200 y ${f("DGX B300")} en la B300`,
+    );
+    expect(leer("../contenido/documento.mdx")).toContain(`se supuso ${f("MI300X x8")}`);
+
+    expect(leer("../contenido/documento.en.mdx")).toContain(
+      `It comes out at ${f("DGX H100")} for the H100, ${f("DGX H200")} for the H200, ${f("DGX B200")} for the B200 and ${f("DGX B300")} for the B300`,
+    );
+    expect(leer("../contenido/documento.en.mdx")).toContain(`${f("MI300X x8")} was assumed`);
+  });
+
+  it("no sobra ninguna referencia: cada una corresponde a un chasis del catálogo", () => {
+    const ids = new Set(CHASIS.map((c) => c.id));
+    for (const id of Object.keys(REFERENCIA_CHASIS)) expect(ids.has(id), id).toBe(true);
+  });
+
+  it("un chasis cuesta más que sus GPUs sueltas pero no una barbaridad más", () => {
+    // Cota de cordura entre el precio por GPU dentro del chasis y el de la GPU
+    // suelta del mismo modelo cuando el catálogo la trae: ni gratis ni 5 veces más.
+    const pares: Array<[string, string]> = [
+      ["DGX A100", "A100 80GB"],
+      ["DGX H100", "H100 SXM"],
+      ["DGX H200", "H200 SXM"],
+      ["8x L40S", "L40S"],
+    ];
+    for (const [chasis, gpu] of pares) {
+      const c = CHASIS.find((x) => x.nombre === chasis);
+      const g = GPUS.find((x) => x.nombre === gpu);
+      if (!c || !g) continue;
+      const razon = c.precio_hora / c.n / g.precio_hora;
+      expect(razon, `${chasis} por GPU frente a ${gpu}`).toBeGreaterThan(0.3);
+      expect(razon, `${chasis} por GPU frente a ${gpu}`).toBeLessThan(3);
     }
   });
 });

@@ -5,6 +5,7 @@ import {
   DiagramaLote,
 } from "../components/Diagramas";
 import Cita from "../components/Cita";
+import TablaChasis from "../components/TablaChasis";
 
 ## De qué trata esto
 
@@ -423,19 +424,115 @@ doble del teórico. Es un parámetro, no una constante física: **si tienes una
 medición real de tu motor de inferencia, úsala**. Es la perilla que más cambia el
 resultado después del contexto.
 
+## Chasis completos
+
+Hasta aquí la unidad que se compra ha sido una GPU. Pero un modelo grande rara
+vez se sirve desde GPUs sueltas: se compra un **chasis** —un DGX, un HGX, una
+plataforma de ocho aceleradores— donde las GPUs vienen unidas por un
+interconector rápido (NVLink, Infinity Fabric) y se pagan como un solo equipo.
+MDI lo trata como una **unidad de $n$ GPUs que sirve una sola réplica del modelo
+con paralelismo tensorial**: los pesos y el caché se reparten entre las $n$, así
+que los recursos se suman y el chasis entero hace de una GPU grande.
+
+Las ecuaciones de arriba no cambian. Cambian los parámetros con que se alimentan:
+
+$$
+V_t = n \cdot V_{\text{gpu}}
+\qquad
+W = n \cdot \sigma \cdot \eta \cdot W_{\text{nominal}}
+\qquad
+F = n \cdot \sigma \cdot \eta \cdot F_{\text{nominal}}
+\qquad
+O_{\text{total}} = n \cdot O
+$$
+
+y $G$ pasa a contar **chasis**: el costo es $G$ por el precio del chasis completo.
+Hay tres términos que una GPU suelta no tenía.
+
+**σ — la escala del paralelismo.** Repartir un modelo entre $n$ GPUs obliga a
+comunicarlas en cada capa, y esa comunicación no es gratis ni cabe en las
+ecuaciones: $\sigma$ es la fracción del ancho de banda y de los FLOPS agregados
+que sobrevive a ella. $\sigma = 1$ sería un escalado perfecto. Igual que $\eta$,
+es una perilla y no una constante física, y los valores que trae el catálogo son
+**supuestos, no mediciones**: si tienes una medición real de tu motor sobre ese
+chasis, úsala. Los de NVIDIA se estimaron con las latencias de *all-reduce* que
+mide vLLM y publica el repositorio aiconfigurator (ai-dynamo). Para un 70B en
+fp8, con lotes de 32 a 128, $\sigma = t_{\text{mem}} / (t_{\text{mem}} +
+t_{\text{comm}})$, donde $t_{\text{mem}}$ es lo que tarda leer los pesos y
+$t_{\text{comm}}$ lo que cuestan los dos *all-reduce* de cada capa;
+`scripts/estimar_sigma.py` rehace la cuenta. Sale 0.70 en la H100, 0.60 en la
+H200, 0.40 en la B200 y 0.35 en la B300: las GPUs más rápidas pierden más,
+porque la latencia de un *all-reduce* no baja con el ancho de banda. Para el
+MI300X no hay una medición equivalente y se supuso 0.40.
+
+**El overhead se paga por GPU.** Los grafos de CUDA, los buffers y la
+fragmentación viven en cada GPU, no una vez por chasis: el overhead total es
+$n \cdot O$.
+
+**El caché se replica cuando $n > H$.** Un motor de inferencia no puede partir
+una cabeza de KV entre GPUs. Con más GPUs que cabezas, cada cabeza vive en $n/H$
+de ellas y el caché por token se multiplica por ese factor; es lo mismo que
+tener $\max(H, n)$ cabezas. Un híbrido de 4 cabezas como el Qwen3.5-27B, en un
+chasis de 8 GPUs, ocupa el doble de caché de lo que dice $\mathrm{KV}_t$; un
+denso de 8 cabezas, nada de más. La calculadora ya lo cuenta, y lo avisa cuando
+ocurre.
+
+### Qué cambia en las conclusiones
+
+- **Un modelo que no cabe en una GPU puede caber en el chasis.** Un 70B en fp16
+  pesa 140 GB y no entra en ninguna GPU de 80 GB. Y aun en fp8, con un SLO de
+  30 ms, leer sus pesos desde una H100 suelta tarda unos 42 ms con $\eta = 0.5$:
+  el SLO es inalcanzable ahí, pero no en un chasis, donde cada GPU lee en
+  paralelo solo su porción.
+- **Los pesos se guardan una vez, no $n$ veces.** Un chasis deja más caché libre
+  que $n$ GPUs sueltas: $n\,(V - O) - P_m$ contra $n\,(V - P_m - O)$. La
+  diferencia son $n - 1$ copias de los pesos.
+- **Se compra el chasis entero.** Una carga que pide tres GPUs pide, en un chasis
+  de ocho, un chasis: cinco de las ocho sobran y se pagan. Por eso la calculadora
+  compara el costo de los **chasis completos**, no el de las GPUs que se usen.
+- **Un chasis de ocho no siempre le gana a ocho GPUs sueltas.** Con un modelo
+  chico, que cabe en una sola GPU, repartirlo entre ocho desperdicia: pierde
+  $\sigma$ en comunicación y, si $n > H$, replica el caché. Ahí una réplica por
+  GPU rinde más. La comparación es justa porque las dos cosas están en la misma
+  gráfica.
+
+### Los chasis del catálogo
+
+Estos son los que trae la calculadora, con el precio de lista del que sale cada
+precio por hora. La columna **USD/h por GPU** es la que permite compararlos con
+las GPUs sueltas: es lo que cuesta una GPU *dentro* del chasis.
+
+<TablaChasis />
+
+**Lo que el catálogo no trae.** Los servidores PCIe sin NVLink —ocho L40S o
+RTX PRO 6000 en una caja— no vienen, porque con paralelismo tensorial su
+*all-reduce* se degrada tanto con el lote que $\sigma$ deja de ser una constante:
+en esas mediciones el de ocho L40S pasa de 27 µs con un lote de 1 a 444 µs con
+uno de 32, y `scripts/estimar_sigma.py` da menos de 0.2. En la práctica esas
+cajas se usan con réplicas independientes o con paralelismo de dos vías, que este
+modelo no cubre. Tampoco vienen los racks de escala NVL72, pensados para
+paralelismo de expertos, ni las plataformas MI325X, MI355X y Gaudi 3, para las
+que no se encontró un precio de sistema completo. Cualquiera se puede agregar
+desde el catálogo de la calculadora.
+
+El selector de la calculadora —**GPUs**, **Chasis** o **Ambos**— decide qué se
+compara. Con *Ambos* en el modo dimensionar el costo es comparable fila por fila;
+en el modo capacidad $G$ cuenta unidades, y un chasis es una unidad de $n$ GPUs:
+conviene mirar el costo además de los usuarios que caben.
+
 ## Cómo leer la calculadora
 
-En el modo **dimensionar** cada punto de la gráfica es una GPU: en el eje
-horizontal el TPOT que logra, en el vertical lo que cuesta por hora la cantidad
-de unidades que hacen falta. La banda de la derecha es la zona que incumple el
+En el modo **dimensionar** cada punto de la gráfica es una GPU o un chasis: en el
+eje horizontal el TPOT que logra, en el vertical lo que cuesta por hora la
+cantidad de unidades que hacen falta. La banda de la derecha es la zona que incumple el
 SLO. La línea punteada une el frente de Pareto — fuera de ella siempre hay una
 opción mejor en las dos dimensiones a la vez.
 
-Las barras de presión de la tabla muestran cuántas GPUs exige cada restricción
-por separado. La barra llena es la que fija el total; las otras dos, atenuadas,
+Las barras de presión de la tabla muestran cuántas unidades —GPUs o chasis—
+exige cada restricción por separado. La barra llena es la que fija el total; las otras dos, atenuadas,
 son la holgura que sobra.
 
-En el modo **capacidad** cada curva es una GPU. Todos los puntos sobre ella
+En el modo **capacidad** cada curva es una GPU o un chasis. Todos los puntos sobre ella
 saturan el sistema, así que no hay un óptimo único: es el intercambio real entre
 atender agentes y atender usuarios, y la pendiente es $\kappa$. El codo que
 aparece en algunas curvas es el punto donde el cuello cambia de bytes a cómputo.
@@ -463,10 +560,15 @@ solo se activa una fracción, así que $N$ debería ser el número de parámetro
 activos para el cómputo y el total para la VRAM: son dos números distintos y aquí
 hay uno solo. Para un MoE, este modelo no aplica sin modificarlo.
 
-**Paralelismo tensorial.** Se asume una réplica completa del modelo por GPU. Con
-paralelismo tensorial los pesos se reparten entre varias unidades, lo que cambia
-tanto $P_m$ por GPU como el patrón de tráfico —y agrega comunicación entre GPUs,
-que aquí no aparece por ningún lado.
+**Paralelismo tensorial.** Para una GPU suelta se asume una réplica completa del
+modelo. Los chasis (véase *Chasis completos*) cubren el caso contrario, pero solo
+en primer orden: el paralelismo es siempre de $n$ vías sobre el chasis entero
+—no hay paralelismo parcial, con varias réplicas dentro de un mismo chasis, ni de
+tubería, ni de expertos, ni varios nodos—; la comunicación entre GPUs entra como
+un único factor $\sigma$ que es un supuesto y no una medición; y no hay un piso
+de latencia fijo por paso (lanzamiento de kernels, *all-reduce*), así que cuando
+el TPOT de un chasis sale de unos pocos milisegundos es una cota inferior
+optimista.
 
 **Variabilidad de la demanda.** Todo el cálculo usa promedios: duty cycle
 promedio, contexto promedio. La demanda real llega en ráfagas, y una cola que se
@@ -490,7 +592,9 @@ Además, dos advertencias sobre los valores por defecto:
 - **Los precios son referenciales.** Pretenden representar CAPEX amortizado más
   OPEX, varían muchísimo entre proveedores y regiones, y son editables en la
   tabla precisamente porque no hay un número correcto. No los uses como
-  cotización.
+  cotización. Los de los chasis son los que más varían: el precio de lista de un
+  sistema completo depende del proveedor, del volumen y de la fecha, y cambia
+  más que el de una GPU.
 
 Dicho todo eso: el modelo acierta en lo que importa para decidir. Cuál
 restricción manda, qué orden de magnitud de hardware hace falta, y cuánto cuesta

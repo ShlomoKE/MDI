@@ -5,6 +5,7 @@ import {
   DiagramaLote,
 } from "../components/Diagramas";
 import Cita from "../components/Cita";
+import TablaChasis from "../components/TablaChasis";
 
 ## What this is about
 
@@ -423,19 +424,115 @@ one. It is a parameter, not a physical constant: **if you have a real
 measurement from your inference engine, use it**. It is the knob that changes
 the result most after context.
 
+## Whole chassis
+
+So far the unit being bought has been a GPU. But a large model is rarely served
+from loose GPUs: you buy a **chassis** —a DGX, an HGX, an eight-accelerator
+platform— where the GPUs come tied together by a fast interconnect (NVLink,
+Infinity Fabric) and are paid for as a single machine. MDI treats it as a
+**unit of $n$ GPUs serving one single replica of the model with tensor
+parallelism**: the weights and the cache are split across the $n$, so the
+resources add up and the whole chassis acts as one big GPU.
+
+The equations above do not change. What changes is the parameters they are fed:
+
+$$
+V_t = n \cdot V_{\text{gpu}}
+\qquad
+W = n \cdot \sigma \cdot \eta \cdot W_{\text{nominal}}
+\qquad
+F = n \cdot \sigma \cdot \eta \cdot F_{\text{nominal}}
+\qquad
+O_{\text{total}} = n \cdot O
+$$
+
+and $G$ now counts **chassis**: the cost is $G$ times the price of the whole
+chassis. There are three terms a loose GPU did not have.
+
+**σ — the parallelism scaling.** Splitting a model across $n$ GPUs forces them
+to communicate at every layer, and that communication is neither free nor
+covered by the equations: $\sigma$ is the fraction of the aggregate bandwidth
+and FLOPS that survives it. $\sigma = 1$ would be perfect scaling. Like $\eta$,
+it is a knob and not a physical constant, and the values the catalogue ships
+with are **assumptions, not measurements**: if you have a real measurement from
+your engine on that chassis, use it. The NVIDIA ones were estimated from the
+*all-reduce* latencies that vLLM measures and the aiconfigurator repository
+(ai-dynamo) publishes. For a 70B in fp8, with batches of 32 to 128,
+$\sigma = t_{\text{mem}} / (t_{\text{mem}} + t_{\text{comm}})$, where
+$t_{\text{mem}}$ is the time to read the weights and $t_{\text{comm}}$ the cost
+of the two *all-reduces* in every layer; `scripts/estimar_sigma.py` redoes the
+calculation. It comes out at 0.70 for the H100, 0.60 for the H200, 0.40 for the
+B200 and 0.35 for the B300: the faster GPUs lose more, because the latency of an
+*all-reduce* does not fall with bandwidth. For the MI300X there is no equivalent
+measurement and 0.40 was assumed.
+
+**The overhead is paid per GPU.** CUDA graphs, buffers and fragmentation live on
+every GPU, not once per chassis: the total overhead is $n \cdot O$.
+
+**The cache is replicated when $n > H$.** An inference engine cannot split a KV
+head across GPUs. With more GPUs than heads, each head lives on $n/H$ of them
+and the cache per token is multiplied by that factor; it is the same as having
+$\max(H, n)$ heads. A 4-head hybrid like Qwen3.5-27B, on an 8-GPU chassis, takes
+twice the cache that $\mathrm{KV}_t$ says; an 8-head dense model, nothing extra.
+The calculator already counts it, and tells you when it happens.
+
+### What changes in the conclusions
+
+- **A model that does not fit on one GPU may fit in the chassis.** A 70B in fp16
+  weighs 140 GB and fits on no 80 GB GPU. And even in fp8, with a 30 ms SLO,
+  reading its weights from a single H100 takes about 42 ms at $\eta = 0.5$: the
+  SLO is unreachable there, but not in a chassis, where each GPU reads only its
+  own share in parallel.
+- **The weights are stored once, not $n$ times.** A chassis leaves more free
+  cache than $n$ loose GPUs: $n\,(V - O) - P_m$ against $n\,(V - P_m - O)$. The
+  difference is $n - 1$ copies of the weights.
+- **You buy the whole chassis.** A load that asks for three GPUs asks, with
+  eight-GPU chassis, for one chassis: five of the eight are idle and still paid
+  for. That is why the calculator compares the cost of **whole chassis**, not of
+  the GPUs that end up used.
+- **An eight-GPU chassis does not always beat eight loose GPUs.** With a small
+  model, one that fits on a single GPU, splitting it across eight wastes
+  resources: it loses $\sigma$ to communication and, if $n > H$, replicates the
+  cache. There, one replica per GPU does better. The comparison is fair because
+  both sit on the same chart.
+
+### The catalogue chassis
+
+These are the ones the calculator ships with, with the list price each hourly
+price comes from. The **USD/h per GPU** column is the one that lets you compare
+them with loose GPUs: it is what one GPU costs *inside* the chassis.
+
+<TablaChasis />
+
+**What the catalogue does not ship.** PCIe servers without NVLink —eight L40S or
+RTX PRO 6000 in one box— are not in it, because under tensor parallelism their
+*all-reduce* degrades so much with batch size that $\sigma$ stops being a
+constant: in those measurements the eight-L40S one goes from 27 µs at batch 1 to
+444 µs at batch 32, and `scripts/estimar_sigma.py` gives less than 0.2. In
+practice those boxes are run with independent replicas or two-way parallelism,
+which this model does not cover. Neither are NVL72-scale racks, designed for
+expert parallelism, nor the MI325X, MI355X and Gaudi 3 platforms, for which no
+complete-system price could be found. Any of them can be added from the
+calculator's catalogue.
+
+The calculator's selector —**GPUs**, **Chassis** or **Both**— decides what is
+compared. With *Both* in sizing mode the cost is comparable row by row; in
+capacity mode $G$ counts units, and a chassis is a unit of $n$ GPUs: look at the
+cost as well as at the users that fit.
+
 ## How to read the calculator
 
-In **sizing** mode each point on the chart is a GPU: on the horizontal axis the
-TPOT it achieves, on the vertical what the number of units required costs per
-hour. The band on the right is the zone that violates the SLO. The dotted line
-joins the Pareto front — off it there is always a better option in both
-dimensions at once.
+In **sizing** mode each point on the chart is a GPU or a chassis: on the
+horizontal axis the TPOT it achieves, on the vertical what the number of units
+required costs per hour. The band on the right is the zone that violates the
+SLO. The dotted line joins the Pareto front — off it there is always a better
+option in both dimensions at once.
 
-The pressure bars in the table show how many GPUs each constraint demands on
-its own. The filled bar is the one that sets the total; the other two, dimmed,
-are the headroom left over.
+The pressure bars in the table show how many units —GPUs or chassis— each
+constraint demands on its own. The filled bar is the one that sets the total;
+the other two, dimmed, are the headroom left over.
 
-In **capacity** mode each curve is a GPU. Every point on it saturates the
+In **capacity** mode each curve is a GPU or a chassis. Every point on it saturates the
 system, so there is no single optimum: it is the real trade-off between serving
 agents and serving users, and the slope is $\kappa$. The elbow that shows up in
 some curves is the point where the bottleneck switches from bytes to compute.
@@ -462,10 +559,15 @@ experts only a fraction activates, so $N$ ought to be the active parameter
 count for compute and the total for VRAM: two different numbers, and here there
 is only one. For an MoE, this model does not apply without modifying it.
 
-**Tensor parallelism.** A full replica of the model per GPU is assumed. With
-tensor parallelism the weights are split across several units, which changes
-both $P_m$ per GPU and the traffic pattern —and adds inter-GPU communication,
-which appears nowhere here.
+**Tensor parallelism.** For a loose GPU a full replica of the model is assumed.
+The chassis (see *Whole chassis*) cover the opposite case, but only to first
+order: the parallelism is always $n$-way across the whole chassis —there is no
+partial parallelism, with several replicas inside one chassis, no pipeline or
+expert parallelism, and no multi-node setups—; inter-GPU communication enters as
+a single factor $\sigma$ that is an assumption and not a measurement; and there
+is no fixed per-step latency floor (kernel launches, *all-reduce*), so when the
+TPOT of a chassis comes out at a few milliseconds it is an optimistic lower
+bound.
 
 **Demand variability.** The whole calculation uses averages: average duty
 cycle, average context. Real demand arrives in bursts, and a queue sized to the
@@ -488,7 +590,9 @@ On top of that, two warnings about the default values:
 - **The prices are indicative.** They are meant to represent amortized CAPEX
   plus OPEX, they vary wildly across providers and regions, and they are
   editable in the table precisely because there is no correct number. Do not
-  use them as a quote.
+  use them as a quote. The chassis ones vary the most: the list price of a
+  complete system depends on the vendor, the volume and the date, and moves more
+  than that of a GPU.
 
 All that said: the model gets right what matters for deciding. Which constraint
 rules, what order of magnitude of hardware it takes, and what each agent added

@@ -45,7 +45,9 @@ difference.
 ## The site
 
 The repository publishes a single-page site that combines the technical document
-—where the equations are derived— with a calculator that applies them. It exists
+—where the equations are derived— with a calculator that applies them. The
+calculator compares single GPUs and **whole chassis** —DGX, HGX and
+eight-accelerator platforms—, with their prices, on the same load. It exists
 in **Spanish (`/`) and English (`/en/`)**: each language is a complete,
 prerendered page, not a variant switched on the fly, so the link you share opens
 in the language you read it in.
@@ -84,7 +86,8 @@ worth keeping in mind so the formulas hold no surprises:
 | $W$, $F$ | **effective** bandwidth and FLOPS: the nominal figure times the factor $\eta$ |
 | $\mathrm{SLO}$ | the maximum acceptable TPOT, in seconds |
 | $U$, $D$, $C$ | registered sessions, duty cycle and average context of a population |
-| $B$, $G$ | batch per GPU and number of GPUs |
+| $B$, $G$ | batch per unit and number of units —GPUs or chassis— |
+| $n$, $\sigma$ | GPUs in a unit (1 for a loose GPU, eight in a typical chassis) and the tensor-parallelism scaling |
 
 ### What takes up the GPU
 
@@ -209,10 +212,43 @@ Whichever comes first is the real one. The crossing between memory and latency i
 direct, because both bound bytes, and does not depend on context at all: memory
 rules when $V_t - P_m - O \le \mathrm{SLO} \cdot W - P_m$.
 
+### A whole chassis
+
+$$
+V_t = n \cdot V_{\text{gpu}}
+\qquad
+W = n \cdot \sigma \cdot \eta \cdot W_{\text{nominal}}
+\qquad
+F = n \cdot \sigma \cdot \eta \cdot F_{\text{nominal}}
+\qquad
+O_{\text{total}} = n \cdot O
+$$
+
+**The equations above do not change: what changes is the parameters they are
+fed.** A chassis is a unit of $n$ GPUs serving one single replica with tensor
+parallelism, so the resources add up and the engine overhead is paid per GPU. $G$
+now counts chassis, and the cost is $G$ times the price of the whole chassis.
+$\sigma$ is the fraction of the aggregate bandwidth and FLOPS that survives
+inter-GPU communication: an assumption, not a measurement, although
+`scripts/estimar_sigma.py` shows where each value comes from. The hourly price of
+each chassis comes from its list price through an explicit rule (`horaria`, in
+`src/lib/catalogos.ts`), and each one carries its source, its power draw and its
+date; the page shows them in a table.
+
+$$
+H_{\text{eff}} = \max(H,\ n)
+$$
+
+**With more GPUs than KV heads the cache is replicated.** An inference engine
+cannot split a head across GPUs: $\mathrm{KV}_t$ is computed with
+$H_{\text{eff}}$ instead of $H$, and the cache per token is multiplied by $n/H$.
+A 4-head hybrid on an 8-GPU chassis takes twice what the original formula says.
+
 > **There are two regimes, not three**, and the page explains why. It also
 > explains where the efficiency factor $\eta = 0.5$ that discounts $W$ and $F$
-> comes from, how capacity mode is solved, how to read the charts and what falls
-> outside the model. None of that fits in a README.
+> comes from, how capacity mode is solved, how to read the charts, when a chassis
+> pays off and when it does not, and what falls outside the model. None of that
+> fits in a README.
 
 ## Provenance
 
@@ -229,7 +265,7 @@ For the sake of rigor, and because it is what published work ought to declare:
 The guarantee that the transcription did not change the math is mechanical, not a
 promise: **`motor.py` is the source of truth** and `src/lib/motor.ts` is a direct
 port —same formulas, same order of operations, same names—. Python and JavaScript
-share 64-bit floating point, so **250 scenarios generated from Python verify the
+share 64-bit floating point, so **500 scenarios generated from Python verify the
 parity with exact floating-point equality**, not with a tolerance. If the port
 drifts, the tests fail.
 
@@ -254,8 +290,8 @@ formats.
 
 ```
 python motor.py                      # the reference output
-python scripts/generar_referencia.py # freezes 250 scenarios into src/lib/referencia.json
-npm test                             # compares the port against those 250 cases
+python scripts/generar_referencia.py # freezes 500 scenarios into src/lib/referencia.json
+npm test                             # compares the port against those 500 cases
 ```
 
 If you touch a formula in `motor.py`, **regenerate the reference and run the
@@ -287,7 +323,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # in another terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 13 checks in Chrome
+node scripts/e2e.mjs                          # 29 checks in Chrome
 node scripts/comparar.mjs                     # the acceptance criterion
 
 npm i -D --no-save lighthouse chrome-launcher
@@ -295,10 +331,11 @@ node scripts/lighthouse.mjs http://localhost:4173/ mobile
 node scripts/lighthouse.mjs http://localhost:4173/ desktop
 ```
 
-`scripts/comparar.mjs` runs `python motor.py`, reads the table the site paints in
-a real Chrome and compares the two cell by cell, including the messages for
-unviable GPUs: the tests already verify engine parity with exact equality, and
-this verifies the last stretch, the one that goes from the engine to the pixels.
+`scripts/comparar.mjs` runs `python motor.py`, reads the tables the site paints
+—the GPU one and the chassis one— in a real Chrome and compares each cell by
+cell, including the messages for unviable GPUs: the tests already verify engine
+parity with exact equality, and this verifies the last stretch, the one that goes
+from the engine to the pixels.
 
 Those dependencies are deliberately kept out of `package.json`: they drag in the
 entire puppeteer tree and with it a couple of dozen security advisories that have
@@ -310,6 +347,7 @@ no business living in a static site.
 motor.py                        source of truth for the math
 scripts/
   generar_referencia.py         freezes motor.py's output as a fixture
+  estimar_sigma.py              estimates σ from real all-reduce measurements
   prerender.mjs                 generates dist/index.html and dist/en/index.html
   e2e.mjs, comparar.mjs         checks in a real Chrome
   lighthouse.mjs                the performance measurements
@@ -319,8 +357,8 @@ src/
   lib/
     motor.ts        direct port of motor.py, with no UI logic
     motor.test.ts   exact parity + theoretical TPOT + bottlenecks + mode consistency
-    referencia.json the 250 scenarios generated from Python
-    catalogos.ts    reference GPUs and models, editable by the user
+    referencia.json the 500 scenarios generated from Python
+    catalogos.ts    reference GPUs, chassis and models, editable by the user
     resultados.ts   joins the UI state to the engine
     formato.ts      presentation layer: the only one that leaves SI units
     urlEstado.ts    state serialization in the query string
@@ -338,9 +376,9 @@ src/
     SeccionCalculadora.tsx  mounts it only when the reader gets close
     GraficaPareto.tsx       cost against latency (sizing mode)
     GraficaFrontera.tsx     agent/user frontier (capacity mode)
-    TablaGPUs.tsx           a table on desktop, stacked cards on mobile
+    TablaGPUs.tsx           GPUs and chassis: a table on desktop, cards on mobile
     BarrasPresion.tsx       the three constraints side by side
-    EditorCatalogo.tsx      add, edit and delete GPUs and models
+    EditorCatalogo.tsx      add, edit and delete GPUs, chassis and models
     Campos.tsx              accessible form pieces
     EntradaNumerica.tsx     a numeric field that does not destroy what you type
     Ecuacion.tsx            LaTeX with KaTeX, loaded on demand
@@ -415,8 +453,9 @@ points at the right version.
 The site develops this in its limitations section, but it bears repeating here:
 MDI is a first-order bound, not a simulator. It does not model **prefix caching**
 —so it oversizes when agents share a system prompt—, **MoE models** —the formula
-assumes every parameter is read per token—, **tensor parallelism** —it assumes
-one full replica per GPU—, **demand variability** —it uses averages; peaks need
+assumes every parameter is read per token—, **tensor parallelism** —a loose GPU
+holds one full replica; the chassis approximates it to first order, with a single
+factor $\sigma$ that is an assumption—, **demand variability** —it uses averages; peaks need
 slack— or **chunked prefill**. Duty cycles are pinned to the worst case and
 prices are indicative, not a quote.
 

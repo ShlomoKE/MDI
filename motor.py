@@ -9,10 +9,14 @@ Implementa las ecuaciones del documento:
 
 Todas las unidades internas son SI: bytes, bytes/s, FLOP/s, segundos.
 Las funciones de entrada aceptan unidades cómodas (GB, GB/s, TFLOPS, ms).
+
+La unidad de cómputo que se compra y se replica es una GPU suelta o un chasis
+completo de n GPUs (ver `GPU`). Las ecuaciones son las mismas para las dos: el
+chasis solo cambia los parámetros con que se alimentan.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import ceil, inf
 
 GB = 1024 ** 3
@@ -57,27 +61,59 @@ class Modelo:
 
 @dataclass
 class GPU:
-    """Hardware. `eff` descuenta el ancho de banda y los FLOPS nominales."""
+    """
+    Hardware: la unidad que se compra y se replica. `eff` descuenta el ancho de
+    banda y los FLOPS nominales.
+
+    Una unidad es una GPU suelta (n=1) o un chasis completo (n>1): n GPUs que
+    sirven UNA réplica del modelo con paralelismo tensorial, así que los pesos y
+    el caché se reparten entre las n. Las ecuaciones no cambian; cambian los
+    parámetros con que se alimentan:
+
+        Vt = n·V      W = n·σ·η·BW      F = n·σ·η·TFLOPS      O_total = n·O
+
+    `vram_gb`, `bw_gbs` y `tflops` son POR GPU, tal como los publica el
+    fabricante. `precio_hora` es el de la unidad COMPLETA.
+    """
     nombre: str
-    vram_gb: float
-    bw_gbs: float            # ancho de banda nominal
-    tflops: float            # FLOPS pico en la precisión de cómputo
-    precio_hora: float       # USD/h — CAPEX amortizado + OPEX
+    vram_gb: float           # por GPU
+    bw_gbs: float            # ancho de banda nominal, por GPU
+    tflops: float            # FLOPS pico en la precisión de cómputo, por GPU
+    precio_hora: float       # USD/h de la unidad — CAPEX amortizado + OPEX
     eff: float = 0.5         # ver nota sobre eficiencia al final
+    n: int = 1               # GPUs que forman la unidad; >1 es un chasis
+    escala: float = 1.0      # σ — qué fracción del ancho de banda y los FLOPS
+                             # agregados sobrevive a la comunicación entre las n
 
     @property
     def Vt(self) -> float:
-        return self.vram_gb * GB
+        """VRAM total de la unidad, bytes."""
+        return self.n * self.vram_gb * GB
 
     @property
     def W(self) -> float:
-        """Ancho de banda efectivo, bytes/s."""
-        return self.bw_gbs * 1e9 * self.eff
+        """Ancho de banda efectivo de la unidad, bytes/s."""
+        return self.n * self.bw_gbs * 1e9 * self.eff * self.escala
 
     @property
     def F(self) -> float:
-        """FLOPS efectivos."""
-        return self.tflops * 1e12 * self.eff
+        """FLOPS efectivos de la unidad."""
+        return self.n * self.tflops * 1e12 * self.eff * self.escala
+
+
+def modelo_en(m: Modelo, g: GPU) -> Modelo:
+    """
+    El modelo tal como queda guardado en la unidad.
+
+    Con paralelismo tensorial de n vías y menos de n cabezas de KV, el motor de
+    inferencia no puede partir una cabeza: la replica en n/H GPUs, y el caché
+    por token se multiplica por n/H. Es lo mismo que tener max(H, n) cabezas,
+    que es como se expresa aquí para no tocar KVₜ. Con una GPU suelta, o con
+    H ≥ n, el modelo queda tal cual.
+    """
+    if g.n > 1 and 0 < m.kv_heads < g.n:
+        return replace(m, kv_heads=g.n)
+    return m
 
 
 @dataclass
@@ -134,7 +170,9 @@ class Techos:
 
 
 def techos(m: Modelo, g: GPU, c: Carga) -> Techos:
-    t_mem = g.Vt - m.Pm - c.overhead_gb * GB
+    # El overhead del motor (grafos de CUDA, buffers, fragmentación) es por GPU:
+    # una unidad de n GPUs paga n veces.
+    t_mem = g.Vt - m.Pm - c.overhead_gb * g.n * GB
     t_lat = c.slo * g.W - m.Pm
     b_comp = (c.slo * g.F) / (2 * m.N * 1e9)
 
@@ -161,7 +199,7 @@ class Dimensionamiento:
     G_mem: float = 0.0
     G_lat: float = 0.0
     G_comp: float = 0.0
-    B: float = 0.0           # lote resultante por GPU
+    B: float = 0.0           # lote resultante por unidad (GPU o chasis)
     tpot_ms: float = 0.0
     tok_s_sesion: float = 0.0
     throughput: float = 0.0  # tokens/s del sistema completo
@@ -174,6 +212,7 @@ def dimensionar(m: Modelo, g: GPU, c: Carga) -> Dimensionamiento:
     if not t.viable:
         return Dimensionamiento(g.nombre, False, t.motivo)
 
+    m = modelo_en(m, g)
     bc = c.bytes_cache(m)
     G_mem = bc / t.memoria
     G_lat = bc / t.latencia
@@ -223,6 +262,7 @@ def capacidad(m: Modelo, g: GPU, c: Carga, G: int) -> Capacidad:
     if not t.viable:
         return Capacidad(g.nombre, False, t.motivo)
 
+    m = modelo_en(m, g)
     h, a = c.humanos, c.agentes
     por_agente = m.KVt * a.D * a.C          # bytes por agente registrado
     por_usuario = m.KVt * h.D * h.C         # bytes por usuario registrado
@@ -264,6 +304,7 @@ def cruces(m: Modelo, g: GPU, c: Carga) -> dict[str, float]:
     Suponen una sola población; con carga mixta aplica el contexto promedio.
     """
     t = techos(m, g, c)
+    m = modelo_en(m, g)
     den = c.slo * g.F * m.KVt
     return {
         "Ceq1_computo_latencia": (t.latencia * 2 * m.N * 1e9) / den if den else inf,
@@ -276,6 +317,7 @@ def cruces(m: Modelo, g: GPU, c: Carga) -> dict[str, float]:
 
 def techos_absolutos(m: Modelo, g: GPU, contexto: float) -> dict[str, float]:
     """Tokens/s máximos del sistema, sin importar cuántas sesiones se agreguen."""
+    m = modelo_en(m, g)
     return {
         "por_memoria": g.W / (m.KVt * contexto),
         "por_computo": g.F / (2 * m.N * 1e9),
@@ -294,6 +336,27 @@ GPUS = [
     GPU("L40S",         48,   864,  733, 1.00),
     GPU("RTX 6000 Ada", 48,   960,  728, 0.90),
     GPU("DGX Spark",   128,   273,  250, 0.20),
+]
+
+# Chasis completos: n GPUs que sirven una réplica con paralelismo tensorial.
+#
+# `vram_gb`, `bw_gbs` y `tflops` son POR GPU, como los publica el fabricante
+# (FLOPS pico DENSOS de 8 bits, igual que en GPUS). El precio es el del chasis
+# entero. De dónde sale cada precio por hora —lista, consumo y fuente— está en
+# `src/lib/catalogos.ts`, y una prueba exige que ahí y aquí digan lo mismo.
+#
+# σ (`escala`) es un supuesto, no una medición. Los de NVIDIA se estiman con las
+# latencias de all-reduce que mide vLLM y publica el repositorio aiconfigurator
+# (ai-dynamo): `python scripts/estimar_sigma.py` rehace el cálculo y da 0.70 en
+# H100, 0.60 en H200, 0.40 en B200 y 0.35 en B300 —las GPUs más rápidas pierden
+# más, porque la latencia del all-reduce no baja con el ancho de banda—. AMD no
+# tiene una medición equivalente: se supone 0.40, como la peor de las medidas.
+CHASIS = [
+    GPU("DGX H100",    80, 3350, 1979, 19.98, n=8, escala=0.70),
+    GPU("DGX H200",   141, 4800, 1979, 28.64, n=8, escala=0.60),
+    GPU("DGX B200",   180, 8000, 4500, 31.90, n=8, escala=0.40),
+    GPU("DGX B300",   288, 8000, 4500, 34.03, n=8, escala=0.35),
+    GPU("MI300X x8",  192, 5300, 2615, 14.77, n=8, escala=0.40),
 ]
 
 MODELOS = [
@@ -322,15 +385,23 @@ if __name__ == "__main__":
     print(f"  κ:            {carga.kappa:.0f} usuarios por agente")
     print(f"  Sesiones activas: {carga.activas:.0f}\n")
 
-    print(f"{'GPU':<16}{'G':>4}{'cuello':>11}{'TPOT':>10}{'tok/s':>8}{'USD/h':>9}")
-    print("-" * 58)
-    for g in GPUS:
-        d = dimensionar(modelo, g, carga)
-        if not d.viable:
-            print(f"{g.nombre:<16}  {d.motivo}")
-            continue
-        print(f"{d.gpu:<16}{d.G:>4}{d.cuello:>11}"
-              f"{d.tpot_ms:>9.1f}m{d.tok_s_sesion:>8.1f}{d.costo_hora:>9.2f}")
+    def tabla_dimensionar(titulo: str, unidades: list[GPU]) -> None:
+        print(f"{titulo:<16}{'G':>4}{'cuello':>11}{'TPOT':>10}{'tok/s':>8}{'USD/h':>9}")
+        print("-" * 58)
+        for g in unidades:
+            d = dimensionar(modelo, g, carga)
+            if not d.viable:
+                print(f"{g.nombre:<16}  {d.motivo}")
+                continue
+            print(f"{d.gpu:<16}{d.G:>4}{d.cuello:>11}"
+                  f"{d.tpot_ms:>9.1f}m{d.tok_s_sesion:>8.1f}{d.costo_hora:>9.2f}")
+
+    tabla_dimensionar("GPU", GPUS)
+
+    # Un chasis es una unidad de n GPUs con paralelismo tensorial: G cuenta chasis
+    # y la columna USD/h es el costo de los chasis completos.
+    print("\nChasis completos (n GPUs con paralelismo tensorial; G cuenta chasis):")
+    tabla_dimensionar("Chasis", CHASIS)
 
     print(f"\nCapacidad con 12 unidades y {carga.agentes.U:.0f} agentes fijos:")
     print(f"{'GPU':<16}{'usuarios':>10}{'cuello':>11}{'TPOT':>10}{'USD/h':>9}")

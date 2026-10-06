@@ -22,6 +22,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from motor import (  # noqa: E402
+    CHASIS,
     GPUS,
     MODELOS,
     Carga,
@@ -173,7 +174,12 @@ def escenarios():
     # eficiencias distintas se cubren abajo, sobre las GPUs
 
 
-def main() -> None:
+def unidades() -> list:
+    """
+    Las unidades de hardware sobre las que se congelan los escenarios: las GPUs
+    sueltas, sus variantes de eficiencia, los chasis del catálogo y variantes de
+    chasis que cubren cada rama del motor.
+    """
     gpus = list(GPUS)
     # variantes de eficiencia sobre una GPU conocida, para cubrir el factor eff
     plantilla = GPUS[0]
@@ -188,6 +194,31 @@ def main() -> None:
                 eff=eff,
             )
         )
+
+    # los chasis del catálogo, tal cual
+    gpus.extend(CHASIS)
+
+    # variantes de n y de σ sobre la misma GPU: n=2 y n=4 no replican el caché de
+    # un modelo con 4 cabezas de KV, n=8 y n=72 sí; σ=1 es el escalado perfecto
+    # y σ=0.5 uno malo. Con esto cada rama de `modelo_en` y del overhead por GPU
+    # queda congelada.
+    for n, escala in ((2, 1.0), (4, 0.9), (8, 1.0), (8, 0.5), (72, 0.6)):
+        gpus.append(
+            type(plantilla)(
+                nombre=f"{plantilla.nombre} n={n} σ={escala}",
+                vram_gb=plantilla.vram_gb,
+                bw_gbs=plantilla.bw_gbs,
+                tflops=plantilla.tflops,
+                precio_hora=plantilla.precio_hora * n,
+                n=n,
+                escala=escala,
+            )
+        )
+    return gpus
+
+
+def main() -> None:
+    gpus = unidades()
 
     casos = []
     for cid, m, c, G in escenarios():
@@ -212,6 +243,13 @@ def main() -> None:
     salida = {
         "_nota": "Generado por scripts/generar_referencia.py. No editar a mano.",
         "GB": 1024 ** 3,
+        # Los catálogos de fábrica de motor.py, para que una prueba verifique que
+        # catalogos.ts trae los mismos valores, en el mismo orden.
+        "catalogos": {
+            "gpus": [limpiar(asdict(g)) for g in GPUS],
+            "chasis": [limpiar(asdict(g)) for g in CHASIS],
+            "modelos": [limpiar(asdict(m)) for m in MODELOS],
+        },
         "casos": casos,
     }
     DESTINO.parent.mkdir(parents=True, exist_ok=True)

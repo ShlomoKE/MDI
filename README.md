@@ -45,7 +45,9 @@ número a esa diferencia.
 ## El sitio
 
 El repositorio publica un sitio de una sola página que combina el documento
-técnico —donde se derivan las ecuaciones— con una calculadora que las aplica.
+técnico —donde se derivan las ecuaciones— con una calculadora que las aplica. La
+calculadora compara GPUs sueltas y **chasis completos** —DGX, HGX y plataformas
+de ocho aceleradores—, con sus precios, sobre la misma carga.
 Existe en **español (`/`) y en inglés (`/en/`)**: cada idioma es una página
 completa y prerenderizada, no una variante que se cambia al vuelo, así que el
 enlace que compartes abre en el idioma en que lo leíste.
@@ -84,7 +86,8 @@ hay que tener presentes para leer las fórmulas sin sorpresas:
 | $W$, $F$ | ancho de banda y FLOPS **efectivos**: el nominal por el factor $\eta$ |
 | $\mathrm{SLO}$ | el TPOT máximo aceptable, en segundos |
 | $U$, $D$, $C$ | sesiones registradas, duty cycle y contexto promedio de una población |
-| $B$, $G$ | lote por GPU y número de GPUs |
+| $B$, $G$ | lote por unidad y número de unidades —GPUs o chasis— |
+| $n$, $\sigma$ | GPUs de una unidad (1 si es una GPU suelta, ocho en un chasis típico) y escala del paralelismo tensorial |
 
 ### Lo que ocupa la GPU
 
@@ -207,10 +210,44 @@ ocurre antes es el real. El cruce entre memoria y latencia es directo, porque
 ambos acotan bytes, y no depende del contexto en absoluto: manda memoria cuando
 $V_t - P_m - O \le \mathrm{SLO} \cdot W - P_m$.
 
+### Un chasis completo
+
+$$
+V_t = n \cdot V_{\text{gpu}}
+\qquad
+W = n \cdot \sigma \cdot \eta \cdot W_{\text{nominal}}
+\qquad
+F = n \cdot \sigma \cdot \eta \cdot F_{\text{nominal}}
+\qquad
+O_{\text{total}} = n \cdot O
+$$
+
+**Las ecuaciones de arriba no cambian: cambian los parámetros con que se
+alimentan.** Un chasis es una unidad de $n$ GPUs que sirve una sola réplica con
+paralelismo tensorial, así que los recursos se suman y el overhead del motor se
+paga por GPU. $G$ pasa a contar chasis, y el costo es $G$ por el precio del
+chasis completo. $\sigma$ es la fracción del ancho de banda y los FLOPS agregados
+que sobrevive a la comunicación entre GPUs: un supuesto, no una medición, aunque
+`scripts/estimar_sigma.py` enseña de dónde sale cada valor. El precio por hora de
+cada chasis sale de su precio de lista con una regla explícita (`horaria`, en
+`src/lib/catalogos.ts`), y cada uno lleva su fuente, su consumo y su fecha; la
+página los muestra en una tabla.
+
+$$
+H_{\text{ef}} = \max(H,\ n)
+$$
+
+**Con más GPUs que cabezas de KV el caché se replica.** Un motor de inferencia no
+puede partir una cabeza entre GPUs: $\mathrm{KV}_t$ se calcula con $H_{\text{ef}}$
+en lugar de $H$, y el caché por token se multiplica por $n/H$. Un híbrido de 4
+cabezas en un chasis de 8 GPUs ocupa el doble de lo que dice la fórmula
+original.
+
 > **Los regímenes son dos, no tres**, y la página explica por qué. También
 > explica de dónde sale el factor de eficiencia $\eta = 0.5$ que descuenta $W$ y
-> $F$, cómo se despeja el modo capacidad, cómo leer las gráficas y qué queda
-> fuera del modelo. Nada de eso cabe en un README.
+> $F$, cómo se despeja el modo capacidad, cómo leer las gráficas, cuándo un chasis
+> conviene y cuándo no, y qué queda fuera del modelo. Nada de eso cabe en un
+> README.
 
 ## Procedencia
 
@@ -227,7 +264,7 @@ Por rigor, y porque es lo que corresponde declarar en un trabajo que se publica:
 La garantía de que la transcripción no cambió la matemática es mecánica, no una
 promesa: **`motor.py` es la fuente de verdad** y `src/lib/motor.ts` es un puerto
 directo —mismas fórmulas, mismo orden de operaciones, mismos nombres—. Python y
-JavaScript comparten el flotante de 64 bits, así que **250 escenarios generados
+JavaScript comparten el flotante de 64 bits, así que **500 escenarios generados
 desde Python verifican la paridad con igualdad exacta de punto flotante**, no con
 tolerancia. Si el puerto se desvía, las pruebas fallan.
 
@@ -253,8 +290,8 @@ pegar.
 
 ```
 python motor.py                      # la salida de referencia
-python scripts/generar_referencia.py # congela 250 escenarios en src/lib/referencia.json
-npm test                             # compara el puerto contra esos 250 casos
+python scripts/generar_referencia.py # congela 500 escenarios en src/lib/referencia.json
+npm test                             # compara el puerto contra esos 500 casos
 ```
 
 Si tocas una fórmula en `motor.py`, **regenera la referencia y vuelve a correr
@@ -273,7 +310,7 @@ jsdom y falla si algo escribe en la consola).
 ```
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 315 pruebas, en los dos idiomas
+npm test           # 621 pruebas, en los dos idiomas
 npm run build      # cliente + servidor + prerenderizado, sale a dist/
 npm run preview    # sirve dist/ localmente
 ```
@@ -286,7 +323,7 @@ npm run build
 npx vite preview --port 4173 --strictPort     # en otra terminal
 
 npm i -D --no-save chrome-launcher puppeteer-core
-node scripts/e2e.mjs                          # 13 comprobaciones en Chrome
+node scripts/e2e.mjs                          # 29 comprobaciones en Chrome
 node scripts/comparar.mjs                     # el criterio de aceptación
 
 npm i -D --no-save lighthouse chrome-launcher
@@ -294,10 +331,11 @@ node scripts/lighthouse.mjs http://localhost:4173/ mobile
 node scripts/lighthouse.mjs http://localhost:4173/ desktop
 ```
 
-`scripts/comparar.mjs` corre `python motor.py`, lee la tabla que pinta el sitio
-en un Chrome real y compara las dos celda por celda, incluidos los mensajes de
-las GPUs inviables: las pruebas ya verifican la paridad del motor con igualdad
-exacta, y esto verifica el último tramo, el que va del motor a los píxeles.
+`scripts/comparar.mjs` corre `python motor.py`, lee las tablas que pinta el sitio
+—la de GPUs y la de chasis— en un Chrome real y compara cada una celda por celda,
+incluidos los mensajes de las GPUs inviables: las pruebas ya verifican la paridad
+del motor con igualdad exacta, y esto verifica el último tramo, el que va del
+motor a los píxeles.
 
 Esas dependencias están deliberadamente fuera de `package.json`: arrastran el
 árbol entero de puppeteer y con él una veintena de avisos de seguridad que no
@@ -309,6 +347,7 @@ tienen por qué vivir en un sitio estático.
 motor.py                        fuente de verdad de la matemática
 scripts/
   generar_referencia.py         congela la salida de motor.py como fixture
+  estimar_sigma.py              estima σ con mediciones reales de all-reduce
   prerender.mjs                 genera dist/index.html y dist/en/index.html
   e2e.mjs, comparar.mjs         verificaciones en un Chrome real
   lighthouse.mjs                las mediciones de rendimiento
@@ -318,8 +357,8 @@ src/
   lib/
     motor.ts        puerto directo de motor.py, sin lógica de UI
     motor.test.ts   paridad exacta + TPOT teórico + cuellos + consistencia de modos
-    referencia.json los 250 escenarios generados desde Python
-    catalogos.ts    GPUs y modelos de referencia, editables por el usuario
+    referencia.json los 500 escenarios generados desde Python
+    catalogos.ts    GPUs, chasis y modelos de referencia, editables por el usuario
     resultados.ts   une el estado de la UI con el motor
     formato.ts      capa de presentación: la única que sale de unidades SI
     urlEstado.ts    serialización del estado en la query string
@@ -337,9 +376,9 @@ src/
     SeccionCalculadora.tsx  la monta solo cuando el lector se acerca
     GraficaPareto.tsx       costo contra latencia (modo dimensionar)
     GraficaFrontera.tsx     frontera agentes/usuarios (modo capacidad)
-    TablaGPUs.tsx           tabla en escritorio, tarjetas apiladas en móvil
+    TablaGPUs.tsx           GPUs y chasis: tabla en escritorio, tarjetas en móvil
     BarrasPresion.tsx       las tres restricciones lado a lado
-    EditorCatalogo.tsx      agregar, editar y eliminar GPUs y modelos
+    EditorCatalogo.tsx      agregar, editar y eliminar GPUs, chasis y modelos
     Campos.tsx              piezas de formulario accesibles
     EntradaNumerica.tsx     un campo numérico que no destruye lo que tecleas
     Ecuacion.tsx            LaTeX con KaTeX, cargado bajo demanda
@@ -347,6 +386,7 @@ src/
     Navegacion.tsx          secciones con resaltado de la activa al hacer scroll
     SelectorIdioma.tsx      el cambio de idioma, que es un enlace y no un estado
     Cita.tsx                los formatos de cita, con la URL donde se está leyendo
+    TablaChasis.tsx         los chasis del documento con su precio, generados del catálogo
   entry-server.tsx  entrada del prerenderizado, una vez por idioma
   App.tsx
 ```
@@ -416,7 +456,8 @@ El sitio lo desarrolla en su sección de limitaciones, pero conviene repetirlo
 aquí: MDI es una cota de primer orden, no un simulador. No modela **prefix
 caching** —por lo que sobredimensiona cuando los agentes comparten system
 prompt—, **modelos MoE** —la fórmula supone que se leen todos los parámetros por
-token—, **paralelismo tensorial** —asume una réplica completa por GPU—,
+token—, **paralelismo tensorial** —una GPU suelta lleva una réplica completa; el chasis lo
+aproxima en primer orden, con un solo factor $\sigma$ que es un supuesto—,
 **variabilidad de la demanda** —usa promedios; los picos requieren holgura— ni
 **chunked prefill**. Los duty cycles están fijados en el peor caso y los precios
 son referenciales, no una cotización.

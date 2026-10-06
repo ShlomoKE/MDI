@@ -16,6 +16,7 @@ import {
   cruces,
   dimensionar,
   kappa,
+  modeloEn,
   techos,
   type Capacidad,
   type Carga,
@@ -29,13 +30,19 @@ import { DUTY_AGENTE, DUTY_HUMANO, soloGPU, soloModelo, type GPUCatalogo } from 
 import type { Estado } from "./urlEstado";
 
 export interface Fila {
+  /** La unidad del catálogo: una GPU suelta o un chasis completo. */
   gpu: GPUCatalogo;
-  /** La GPU tal como la ve el motor, ya con el factor de eficiencia aplicado. */
+  /** La unidad tal como la ve el motor, ya con el factor de eficiencia aplicado. */
   hw: GPU;
   techos: Techos;
   dim: Dimensionamiento;
   cap: Capacidad;
   cruces: Cruces;
+  /**
+   * Cuántas veces se multiplica el caché por token al repartir las cabezas de KV
+   * entre las n GPUs de la unidad. Es 1 salvo que n supere las cabezas del modelo.
+   */
+  kvRep: number;
   /** Agentes que caben si no hubiera ningún humano. */
   soloAgentes: number;
   /** Humanos que caben si no hubiera ningún agente. */
@@ -127,6 +134,10 @@ function fronteraDe(m: Modelo, g: GPU, c: Carga, G: number, maxAgentes: number):
   return pts;
 }
 
+/** Las unidades que se comparan según la vista elegida, en el orden del catálogo. */
+export const unidadesDe = (e: Estado): GPUCatalogo[] =>
+  e.vista === "gpus" ? e.gpus : e.vista === "chasis" ? e.chasis : [...e.gpus, ...e.chasis];
+
 export function calcular(e: Estado): Resultados {
   const modelo = modeloDe(e);
   const carga = cargaDe(e);
@@ -140,10 +151,10 @@ export function calcular(e: Estado): Resultados {
   // tiene que seguir en la tabla, porque es donde vive la única casilla que
   // puede volver a marcarlas. El filtro por `on` se aplica al derivar `ok`, que
   // es lo que alimenta gráficas, Pareto y recomendación.
-  const filas: Fila[] = e.gpus
+  const filas: Fila[] = unidadesDe(e)
     .map((g) => {
       // El factor de eficiencia es común a todo el catálogo: descuenta el ancho
-      // de banda y los FLOPS nominales de cada GPU por igual.
+      // de banda y los FLOPS nominales de cada unidad por igual.
       const hw: GPU = { ...soloGPU(g), eff: e.eff };
       const t = techos(modelo, hw, carga);
       const dim = dimensionar(modelo, hw, carga);
@@ -163,6 +174,7 @@ export function calcular(e: Estado): Resultados {
         dim,
         cap,
         cruces: cruces(modelo, hw, carga),
+        kvRep: modelo.kv_heads > 0 ? modeloEn(modelo, hw).kv_heads / modelo.kv_heads : 1,
         soloAgentes,
         soloUsuarios,
         frontera: t.viable ? fronteraDe(modelo, hw, carga, e.G, soloAgentes) : [],
